@@ -96,9 +96,9 @@ class PhysicsNet(BaseNet):
         self.extra_valid_fns.append((self.visualize_sequence, [], {}))
         self.extra_test_fns.append((self.visualize_sequence, [], {}))
 
-        self.conv_encoder = ConvEncoder(self.input_shape, self.n_objs, self.conv_input_shape, self.conv_ch, self.alt_vel)
-        self.vel_encoder = VelEncoder(self.input_shape, self.n_objs, self.conv_input_shape)  # Adjust parameters as needed
-        self.conv_decoder = ConvDecoder(self.input_shape, self.n_objs, self.conv_input_shape, self.conv_ch, self.alt_vel)
+        self.conv_encoder = ConvEncoder(self.input_shape, self.n_objs, self.conv_input_shape, self.conv_ch, self.alt_vel).forward
+        self.vel_encoder = VelEncoder(self.input_shape, self.n_objs, self.conv_input_shape).forward  # Adjust parameters as needed
+        self.conv_decoder = ConvDecoder(self.input_shape, self.n_objs, self.conv_input_shape, self.conv_ch, self.alt_vel).forward
 
     def get_batch(self, batch_size, iterator):
         batch_x, _ = iterator.next_batch(batch_size)
