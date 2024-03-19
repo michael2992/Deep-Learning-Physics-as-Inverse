@@ -6,9 +6,9 @@ import torch
 import torch.nn as nn
 from pprint import pprint
 import inspect
-
+os.sys.path.append(".")
 from nn.network.base import BaseNet, OPTIMIZERS
-from nn.network.cells import bouncing_ode_cell, spring_ode_cell, gravity_ode_cell
+from nn.network.cells import BouncingODECell, SpringODECell, GravityODECell
 from nn.network.stn import stn
 from nn.network.blocks import unet, shallow_unet, variable_from_network
 from nn.utils.misc import log_metrics
@@ -21,9 +21,9 @@ plt.switch_backend('agg')
 logger = logging.getLogger("torch")
 
 CELLS = {
-    "bouncing_ode_cell": bouncing_ode_cell,
-    "spring_ode_cell": spring_ode_cell,
-    "gravity_ode_cell": gravity_ode_cell,
+    "bouncing_ode_cell": BouncingODECell,
+    "spring_ode_cell": SpringODECell,
+    "gravity_ode_cell": GravityODECell,
     "lstm": nn.LSTMCell
 }
 
