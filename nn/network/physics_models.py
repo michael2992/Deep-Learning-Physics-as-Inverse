@@ -9,11 +9,13 @@ import inspect
 os.sys.path.append(".")
 from nn.network.base import BaseNet, OPTIMIZERS
 from nn.network.cells import BouncingODECell, SpringODECell, GravityODECell
-from nn.network.stn import stn
+from nn.network.encoder import ConvEncoder,ConvDecoder, VelEncoder
+from nn.network import stn
 from nn.network.blocks import unet, shallow_unet, variable_from_network
 from nn.utils.misc import log_metrics
 from nn.utils.viz import gallery, gif
 from nn.utils.math import sigmoid
+
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 plt.switch_backend('agg')
@@ -52,10 +54,10 @@ class PhysicsNet(BaseNet):
                  decoder_type="conv_st_decoder"):
 
         super(PhysicsNet, self).__init__()
-
+        
         assert task in COORD_UNITS
         self.task = task
-
+       
         self.recurrent_units = recurrent_units
         self.lstm_layers = lstm_layers
 
@@ -93,6 +95,10 @@ class PhysicsNet(BaseNet):
 
         self.extra_valid_fns.append((self.visualize_sequence, [], {}))
         self.extra_test_fns.append((self.visualize_sequence, [], {}))
+
+        self.conv_encoder = ConvEncoder(self.input_shape, self.n_objs, self.conv_input_shape, self.conv_ch, self.alt_vel)
+        self.vel_encoder = VelEncoder(self.input_shape, self.n_objs, self.conv_input_shape)  # Adjust parameters as needed
+        self.conv_decoder = ConvDecoder(self.input_shape, self.n_objs, self.conv_input_shape, self.conv_ch, self.alt_vel)
 
     def get_batch(self, batch_size, iterator):
         batch_x, _ = iterator.next_batch(batch_size)
@@ -143,96 +149,96 @@ class PhysicsNet(BaseNet):
         gvs = [(torch.clamp(grad, -1.0, 1.0), var) for grad, var in gvs if grad is not None]
         self.train_op = self.optimizer.apply_gradients(gvs)
 
-    def conv_encoder(self, inp, scope=None, reuse=torch.AUTO_REUSE):
-        with torch.variable_scope(scope or torch.get_variable_scope(), reuse=reuse):
-            with torch.variable_scope("encoder"):
-                rang = torch.range(self.conv_input_shape[0], dtype=torch.float32)
-                grid_x, grid_y = torch.meshgrid(rang, rang)
-                grid = torch.cat([grid_x[:,:,None], grid_y[:,:,None]], dim=2)
-                grid = torch.tile(grid[None,:,:,:], [torch.shape(inp)[0], 1, 1, 1])
+    # def conv_encoder(self, inp, scope=None, reuse=torch.AUTO_REUSE):
+    #     with torch.variable_scope(scope or torch.get_variable_scope(), reuse=reuse):
+    #         with torch.variable_scope("encoder"):
+    #             rang = torch.range(self.conv_input_shape[0], dtype=torch.float32)
+    #             grid_x, grid_y = torch.meshgrid(rang, rang)
+    #             grid = torch.cat([grid_x[:,:,None], grid_y[:,:,None]], dim=2)
+    #             grid = torch.tile(grid[None,:,:,:], [torch.shape(inp)[0], 1, 1, 1])
 
-                if self.input_shape[0] < 40:
-                    h = inp
-                    h = shallow_unet(h, 8, self.n_objs, upsamp=True)
+    #             if self.input_shape[0] < 40:
+    #                 h = inp
+    #                 h = shallow_unet(h, 8, self.n_objs, upsamp=True)
 
-                    h = torch.cat([h, torch.ones_like(h[:,:,:,:1])], axis=-1)
-                    h = torch.nn.functional.softmax(h, dim=-1)
-                    self.enc_masks = h
-                    self.masked_objs = [self.enc_masks[:,:,:,i:i+1]*inp for i in range(self.n_objs)]
+    #                 h = torch.cat([h, torch.ones_like(h[:,:,:,:1])], axis=-1)
+    #                 h = torch.nn.functional.softmax(h, dim=-1)
+    #                 self.enc_masks = h
+    #                 self.masked_objs = [self.enc_masks[:,:,:,i:i+1]*inp for i in range(self.n_objs)]
 
-                    h = torch.cat(self.masked_objs, axis=0)
-                    h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0]*self.input_shape[1]*self.conv_ch])
+    #                 h = torch.cat(self.masked_objs, axis=0)
+    #                 h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0]*self.input_shape[1]*self.conv_ch])
 
-                else:
-                    self.enc_masks = []
-                    self.masked_objs = []
-                    h = inp
-                    for _ in range(4):
-                        h = unet(h, 8, self.n_objs, upsamp=True)
-                        h = torch.cat([h, torch.ones_like(h[:,:,:,:1])], axis=-1)
-                        h = torch.nn.functional.softmax(h, dim=-1)
-                        self.enc_masks.append(h)
-                        self.masked_objs.append([h[:,:,:,i:i+1]*inp for i in range(self.n_objs)])
+    #             else:
+    #                 self.enc_masks = []
+    #                 self.masked_objs = []
+    #                 h = inp
+    #                 for _ in range(4):
+    #                     h = unet(h, 8, self.n_objs, upsamp=True)
+    #                     h = torch.cat([h, torch.ones_like(h[:,:,:,:1])], axis=-1)
+    #                     h = torch.nn.functional.softmax(h, dim=-1)
+    #                     self.enc_masks.append(h)
+    #                     self.masked_objs.append([h[:,:,:,i:i+1]*inp for i in range(self.n_objs)])
 
-                    h = torch.cat([torch.cat(mobjs, axis=0) for mobjs in self.masked_objs], axis=0)
-                    h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0]*self.input_shape[1]*self.conv_ch])
+    #                 h = torch.cat([torch.cat(mobjs, axis=0) for mobjs in self.masked_objs], axis=0)
+    #                 h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0]*self.input_shape[1]*self.conv_ch])
 
-                if self.alt_vel:
-                    vels = self.vel_encoder(inp, reuse=reuse)
-                    h = torch.cat([h, vels], axis=1)
-                    h = torch.nn.functional.relu(h)
+    #             if self.alt_vel:
+    #                 vels = self.vel_encoder(inp, reuse=reuse)
+    #                 h = torch.cat([h, vels], axis=1)
+    #                 h = torch.nn.functional.relu(h)
 
-                cell = self.cell(self.recurrent_units)
-                c, h = cell(h)
-        return h
+    #             cell = self.cell(self.recurrent_units)
+    #             c, h = cell(h)
+    #     return h
 
-    def vel_encoder(self, inp, scope=None, reuse=torch.AUTO_REUSE):
-        with torch.variable_scope(scope or torch.get_variable_scope(), reuse=reuse):
-            with torch.variable_scope("vel_encoder"):
-                h = inp
-                h = shallow_unet(h, 8, self.n_objs*2, upsamp=True)
-                h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0]*self.input_shape[1]*self.n_objs*2])
-        return h
+    # def vel_encoder(self, inp, scope=None, reuse=torch.AUTO_REUSE):
+    #     with torch.variable_scope(scope or torch.get_variable_scope(), reuse=reuse):
+    #         with torch.variable_scope("vel_encoder"):
+    #             h = inp
+    #             h = shallow_unet(h, 8, self.n_objs*2, upsamp=True)
+    #             h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0]*self.input_shape[1]*self.n_objs*2])
+    #     return h
 
-    def conv_st_decoder(self, inp, scope=None, reuse=torch.AUTO_REUSE):
-        with torch.variable_scope(scope or torch.get_variable_scope(), reuse=reuse):
-            with torch.variable_scope("decoder"):
-                if self.alt_vel:
-                    inp = inp[:,:-self.n_objs*2]
+    # def conv_st_decoder(self, inp, scope=None, reuse=torch.AUTO_REUSE):
+    #     with torch.variable_scope(scope or torch.get_variable_scope(), reuse=reuse):
+    #         with torch.variable_scope("decoder"):
+    #             if self.alt_vel:
+    #                 inp = inp[:,:-self.n_objs*2]
 
-                h = inp
-                h = torch.nn.functional.relu(h)
-                h = torch.nn.functional.relu(h)
-                h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.conv_ch])
+    #             h = inp
+    #             h = torch.nn.functional.relu(h)
+    #             h = torch.nn.functional.relu(h)
+    #             h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.conv_ch])
 
-                if self.input_shape[0] < 40:
-                    h = shallow_unet(h, 8, self.n_objs, upsamp=True)
-                    h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.n_objs])
-                    self.dec_masks = h
-                    self.dec_objs = [self.dec_masks[:,:,:,i:i+1]*inp for i in range(self.n_objs)]
+    #             if self.input_shape[0] < 40:
+    #                 h = shallow_unet(h, 8, self.n_objs, upsamp=True)
+    #                 h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.n_objs])
+    #                 self.dec_masks = h
+    #                 self.dec_objs = [self.dec_masks[:,:,:,i:i+1]*inp for i in range(self.n_objs)]
 
-                    h = torch.cat(self.dec_objs, axis=3)
-                    h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.conv_ch])
+    #                 h = torch.cat(self.dec_objs, axis=3)
+    #                 h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.conv_ch])
 
-                else:
-                    self.dec_masks = []
-                    self.dec_objs = []
-                    for _ in range(4):
-                        h = unet(h, 8, self.n_objs, upsamp=True)
-                        h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.n_objs])
-                        self.dec_masks.append(h)
-                        self.dec_objs.append([h[:,:,:,i:i+1]*inp for i in range(self.n_objs)])
+    #             else:
+    #                 self.dec_masks = []
+    #                 self.dec_objs = []
+    #                 for _ in range(4):
+    #                     h = unet(h, 8, self.n_objs, upsamp=True)
+    #                     h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.n_objs])
+    #                     self.dec_masks.append(h)
+    #                     self.dec_objs.append([h[:,:,:,i:i+1]*inp for i in range(self.n_objs)])
 
-                    h = torch.cat([torch.cat(dobjs, axis=3) for dobjs in self.dec_objs], axis=3)
-                    h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.conv_ch])
-        return h
+    #                 h = torch.cat([torch.cat(dobjs, axis=3) for dobjs in self.dec_objs], axis=3)
+    #                 h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.conv_ch])
+    #     return h
 
     def conv_feedforward(self):
         with torch.variable_scope("conv_feedforward"):
             with torch.variable_scope("encoder"):
-                enc_out = self.encoder(self.input[:, :self.input_steps], reuse=False)
+                enc_out = self.encoder(self.input[:, :self.input_steps])
             with torch.variable_scope("decoder"):
-                dec_out = self.decoder(enc_out, reuse=False)
+                dec_out = self.decoder(enc_out)
         return dec_out
 
     def visualize_sequence(self):
