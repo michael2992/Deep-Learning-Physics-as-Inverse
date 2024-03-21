@@ -137,7 +137,8 @@ class PhysicsNet(BaseNet):
         return train_loss, eval_losses
 
     def build_graph(self):
-        self.input = torch.Tensor(shape=[None, self.seq_len] + self.input_shape, dtype=torch.float32)  # Changed to PyTorch style
+        self.input = torch.Tensor([self.seq_len] + self.input_shape).unsqueeze(dim=0)
+        self.input.to(torch.float32)
         self.output = self.conv_feedforward()
 
         self.train_loss, self.eval_losses = self.compute_loss()
