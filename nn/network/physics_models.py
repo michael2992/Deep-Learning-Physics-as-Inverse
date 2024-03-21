@@ -70,12 +70,16 @@ class PhysicsNet(BaseNet):
         self.conv_input_shape = [int(np.sqrt(input_size))]*2+[self.conv_ch]
         self.input_shape = [int(np.sqrt(input_size))]*2+[self.conv_ch]
 
-        self.encoder = {name: method for name, method in \
-            inspect.getmembers(self, predicate=inspect.ismethod) if "encoder" in name
-        }[encoder_type]
-        self.decoder = {name: method for name, method in \
-            inspect.getmembers(self, predicate=inspect.ismethod) if "decoder" in name
-        }[decoder_type]  
+        self.encoder = self.conv_encoder
+        
+        # {name: method for name, method in \
+        #     inspect.getmembers(self, predicate=inspect.ismethod) if "encoder" in name
+        # }[encoder_type]
+        self.decoder = self.conv_decoder 
+
+        # {name: method for name, method in \
+         #    inspect.getmembers(self, predicate=inspect.ismethod) if "decoder" in name
+        # }[decoder_type]  
 
         self.output_shape = self.input_shape
 
@@ -96,9 +100,14 @@ class PhysicsNet(BaseNet):
         self.extra_valid_fns.append((self.visualize_sequence, [], {}))
         self.extra_test_fns.append((self.visualize_sequence, [], {}))
 
-        self.conv_encoder = ConvEncoder(self.input_shape, self.n_objs, self.conv_input_shape, self.conv_ch, self.alt_vel).forward
-        self.vel_encoder = VelEncoder(self.input_shape, self.n_objs, self.conv_input_shape).forward  # Adjust parameters as needed
-        self.conv_decoder = ConvDecoder(self.input_shape, self.n_objs, self.conv_input_shape, self.conv_ch, self.alt_vel).forward
+    def conv_encoder(self, x):
+        return ConvEncoder(self.input_shape, self.n_objs, self.conv_input_shape, self.conv_ch, self.alt_vel).forward(x)
+    
+    def vel_encoder(self, x):
+        return VelEncoder(self.input_shape, self.n_objs, self.conv_input_shape).forward(x)  # Adjust parameters as needed
+    
+    def conv_decoder(self, x):
+       return ConvDecoder(self.input_shape, self.n_objs, self.conv_input_shape, self.conv_ch, self.alt_vel).forward(x)
 
     def get_batch(self, batch_size, iterator):
         batch_x, _ = iterator.next_batch(batch_size)
@@ -128,7 +137,7 @@ class PhysicsNet(BaseNet):
         return train_loss, eval_losses
 
     def build_graph(self):
-        self.input = torch.tensor(shape=[None, self.seq_len] + self.input_shape, dtype=torch.float32)  # Changed to PyTorch style
+        self.input = torch.Tensor(shape=[None, self.seq_len] + self.input_shape, dtype=torch.float32)  # Changed to PyTorch style
         self.output = self.conv_feedforward()
 
         self.train_loss, self.eval_losses = self.compute_loss()
