@@ -78,29 +78,9 @@ def main():
                                   "../data/datasets/%s"%data_file), conv=True, datapoints=datapoints)
     
     network.get_data(data_iterators)
-    # Inside the main function, after initializing the model and optimizer
-    for epoch in range(epochs):
-        for batch_x, _ in data_iterators:
-            # Move data to device
-            # batch_x = batch_x  # Assuming 'device' is defined (e.g., as 'torch.device("cuda")')
-            
-            # Zero the parameter gradients
-            network.optimizer.zero_grad()
-            
-            # Forward + backward + optimize
-            outputs = network(batch_x)
-            loss = network.loss  # Assuming your model computes the loss in the forward pass or separately
-            loss.backward()
-            
-            # Optional: Gradient clipping
-            torch.nn.utils.clip_grad_norm_(network.parameters(), max_norm=1.0)
-            
-            network.optimizer.step()
-        
-    #     # Print statistics, etc.
     
-    # network.train(epochs, batch_size, save_every_n_epochs, eval_every_n_epochs,
-    #             print_interval, debug)
+    network.train(epochs, batch_size, save_every_n_epochs, eval_every_n_epochs,
+                 print_interval, debug)
         
     torch.cuda.empty_cache()
 
