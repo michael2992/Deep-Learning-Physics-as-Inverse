@@ -4,7 +4,7 @@ import shutil
 import logging
 import numpy as np
 import torch  # Change import statement
-
+import torch.nn as nn
 from nn.utils.misc import log_metrics, zipdir
 
 logger = logging.getLogger("torch")  # Change logger name
@@ -19,9 +19,10 @@ OPTIMIZERS = {
 }
 
 
-class BaseNet:
+class BaseNet(nn.Module):
 
     def __init__(self):
+        super(BaseNet, self).__init__()
         self.train_metrics = {}
         self.eval_metrics = {}
 

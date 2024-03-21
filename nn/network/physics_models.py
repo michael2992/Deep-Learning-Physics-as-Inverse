@@ -16,6 +16,7 @@ from nn.utils.misc import log_metrics
 from nn.utils.viz import gallery, gif
 from nn.utils.math import sigmoid
 
+
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 plt.switch_backend('agg')
@@ -70,12 +71,8 @@ class PhysicsNet(BaseNet):
         self.conv_input_shape = [int(np.sqrt(input_size))]*2+[self.conv_ch]
         self.input_shape = [int(np.sqrt(input_size))]*2+[self.conv_ch]
 
-        self.encoder = {name: method for name, method in \
-            inspect.getmembers(self, predicate=inspect.ismethod) if "encoder" in name
-        }[encoder_type]
-        self.decoder = {name: method for name, method in \
-            inspect.getmembers(self, predicate=inspect.ismethod) if "decoder" in name
-        }[decoder_type]  
+        
+        
 
         self.output_shape = self.input_shape
 
@@ -99,6 +96,17 @@ class PhysicsNet(BaseNet):
         self.conv_encoder = ConvEncoder(self.input_shape, self.n_objs, self.conv_input_shape, self.conv_ch, self.alt_vel).forward
         self.vel_encoder = VelEncoder(self.input_shape, self.n_objs, self.conv_input_shape).forward  # Adjust parameters as needed
         self.conv_decoder = ConvDecoder(self.input_shape, self.n_objs, self.conv_input_shape, self.conv_ch, self.alt_vel).forward
+
+        self.lstms = nn.LSTM(input_size=self.recurrent_units, hidden_size=self.recurrent_units, num_layers=self.lstm_layers)
+        
+        self.encoder = self.conv_encoder
+        # {name: method for name, method in \
+        #     inspect.getmembers(self, predicate=inspect.ismethod) if "encoder" in name
+        # }[encoder_type]
+        self.decoder = self.conv_decoder 
+        # {name: method for name, method in \
+        #     inspect.getmembers(self, predicate=inspect.ismethod) if "decoder" in name
+        # }[decoder_type]  
 
     def get_batch(self, batch_size, iterator):
         batch_x, _ = iterator.next_batch(batch_size)
@@ -127,9 +135,9 @@ class PhysicsNet(BaseNet):
         eval_losses = [self.pred_loss, self.extrap_loss, self.recons_loss]
         return train_loss, eval_losses
 
-    def build_graph(self):
-        self.input = torch.tensor(shape=[None, self.seq_len] + self.input_shape, dtype=torch.float32)  # Changed to PyTorch style
-        self.output = self.conv_feedforward()
+    def forward(self, x):
+        self.input = x
+        self.output = self.conv_feedforward(self.input)
 
         self.train_loss, self.eval_losses = self.compute_loss()
         self.train_metrics["train_loss"] = self.train_loss
@@ -137,109 +145,55 @@ class PhysicsNet(BaseNet):
         self.eval_metrics["eval_extrap_loss"] = self.eval_losses[1]
         self.eval_metrics["eval_recons_loss"] = self.eval_losses[2]
         self.loss = self.train_loss
+        return self.output
 
     def build_optimizer(self, base_lr, optimizer="rmsprop", anneal_lr=True):
         self.base_lr = base_lr
         self.anneal_lr = anneal_lr
-        self.lr = nn.Parameter(torch.tensor(base_lr), requires_grad=False)  # Changed to PyTorch style
-        self.optimizer = OPTIMIZERS[optimizer](self.lr)
+        self.lr = base_lr  # No need to wrap this in nn.Parameter
         
-        update_ops = torch.optim.optimizer.optimizer.Optimizer.param_groups  # Update operations may need to be manually handled in PyTorch
-        gvs = self.optimizer.compute_gradients(self.loss, var_list=torch.nn.Module.parameters())  # Changed to PyTorch style
-        gvs = [(torch.clamp(grad, -1.0, 1.0), var) for grad, var in gvs if grad is not None]
-        self.train_op = self.optimizer.apply_gradients(gvs)
+        # Choose the optimizer
+        if optimizer == "rmsprop":
+            self.optimizer = torch.optim.RMSprop(self.parameters(), lr=self.lr)
+        # Add other optimizers as needed
+    
+    # No need for manual gradient clipping setup here; do it in the training loop
 
-    # def conv_encoder(self, inp, scope=None, reuse=torch.AUTO_REUSE):
-    #     with torch.variable_scope(scope or torch.get_variable_scope(), reuse=reuse):
-    #         with torch.variable_scope("encoder"):
-    #             rang = torch.range(self.conv_input_shape[0], dtype=torch.float32)
-    #             grid_x, grid_y = torch.meshgrid(rang, rang)
-    #             grid = torch.cat([grid_x[:,:,None], grid_y[:,:,None]], dim=2)
-    #             grid = torch.tile(grid[None,:,:,:], [torch.shape(inp)[0], 1, 1, 1])
+    def conv_feedforward(self, input_tensor):
+        # Initialize LSTM states
+        h0 = torch.zeros(self.lstm_layers, input_tensor.size(0), self.recurrent_units).to(input_tensor.device)
+        c0 = torch.zeros(self.lstm_layers, input_tensor.size(0), self.recurrent_units).to(input_tensor.device)
+        
+        # Reshape input tensor for encoding
+        h = input_tensor[:, :self.input_steps+self.pred_steps].view(-1, *self.input_shape)
+        enc_pos = self.encoder(h)  # Assuming self.encoder is correctly defined and returns encoded positions
 
-    #             if self.input_shape[0] < 40:
-    #                 h = inp
-    #                 h = shallow_unet(h, 8, self.n_objs, upsamp=True)
+        # Decode the input and pred frames
+        recons_out = self.decoder(enc_pos)  # Assuming self.decoder is correctly defined
+        self.recons_out = recons_out.view(input_tensor.size(0), self.input_steps+self.pred_steps, *self.input_shape)
+        self.enc_pos = enc_pos.view(input_tensor.size(0), self.input_steps+self.pred_steps, self.coord_units//2)
 
-    #                 h = torch.cat([h, torch.ones_like(h[:,:,:,:1])], axis=-1)
-    #                 h = torch.nn.functional.softmax(h, dim=-1)
-    #                 self.enc_masks = h
-    #                 self.masked_objs = [self.enc_masks[:,:,:,i:i+1]*inp for i in range(self.n_objs)]
+        if self.input_steps > 1:
+            vel = self.vel_encoder(self.enc_pos[:, :self.input_steps])  # Assuming self.vel_encoder is correctly defined
+        else:
+            vel = torch.zeros(input_tensor.size(0), self.coord_units//2).to(input_tensor.device)
 
-    #                 h = torch.cat(self.masked_objs, axis=0)
-    #                 h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0]*self.input_shape[1]*self.conv_ch])
+        pos = self.enc_pos[:, self.input_steps-1]
+        output_seq = []
+        pos_vel_seq = [torch.cat([pos, vel], dim=1)]
 
-    #             else:
-    #                 self.enc_masks = []
-    #                 self.masked_objs = []
-    #                 h = inp
-    #                 for _ in range(4):
-    #                     h = unet(h, 8, self.n_objs, upsamp=True)
-    #                     h = torch.cat([h, torch.ones_like(h[:,:,:,:1])], axis=-1)
-    #                     h = torch.nn.functional.softmax(h, dim=-1)
-    #                     self.enc_masks.append(h)
-    #                     self.masked_objs.append([h[:,:,:,i:i+1]*inp for i in range(self.n_objs)])
+        # Rollout ODE and decoder
+        for t in range(self.pred_steps+self.extrap_steps):
+            # Rollout
+            pos, vel = self.rollout_cell(pos, vel)  # Assuming rollout_cell is correctly defined
 
-    #                 h = torch.cat([torch.cat(mobjs, axis=0) for mobjs in self.masked_objs], axis=0)
-    #                 h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0]*self.input_shape[1]*self.conv_ch])
+            # Decode
+            out = self.decoder(pos)
 
-    #             if self.alt_vel:
-    #                 vels = self.vel_encoder(inp, reuse=reuse)
-    #                 h = torch.cat([h, vels], axis=1)
-    #                 h = torch.nn.functional.relu(h)
+            pos_vel_seq.append(torch.cat([pos, vel], dim=1))
+            output_seq.append(out)
 
-    #             cell = self.cell(self.recurrent_units)
-    #             c, h = cell(h)
-    #     return h
-
-    # def vel_encoder(self, inp, scope=None, reuse=torch.AUTO_REUSE):
-    #     with torch.variable_scope(scope or torch.get_variable_scope(), reuse=reuse):
-    #         with torch.variable_scope("vel_encoder"):
-    #             h = inp
-    #             h = shallow_unet(h, 8, self.n_objs*2, upsamp=True)
-    #             h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0]*self.input_shape[1]*self.n_objs*2])
-    #     return h
-
-    # def conv_st_decoder(self, inp, scope=None, reuse=torch.AUTO_REUSE):
-    #     with torch.variable_scope(scope or torch.get_variable_scope(), reuse=reuse):
-    #         with torch.variable_scope("decoder"):
-    #             if self.alt_vel:
-    #                 inp = inp[:,:-self.n_objs*2]
-
-    #             h = inp
-    #             h = torch.nn.functional.relu(h)
-    #             h = torch.nn.functional.relu(h)
-    #             h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.conv_ch])
-
-    #             if self.input_shape[0] < 40:
-    #                 h = shallow_unet(h, 8, self.n_objs, upsamp=True)
-    #                 h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.n_objs])
-    #                 self.dec_masks = h
-    #                 self.dec_objs = [self.dec_masks[:,:,:,i:i+1]*inp for i in range(self.n_objs)]
-
-    #                 h = torch.cat(self.dec_objs, axis=3)
-    #                 h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.conv_ch])
-
-    #             else:
-    #                 self.dec_masks = []
-    #                 self.dec_objs = []
-    #                 for _ in range(4):
-    #                     h = unet(h, 8, self.n_objs, upsamp=True)
-    #                     h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.n_objs])
-    #                     self.dec_masks.append(h)
-    #                     self.dec_objs.append([h[:,:,:,i:i+1]*inp for i in range(self.n_objs)])
-
-    #                 h = torch.cat([torch.cat(dobjs, axis=3) for dobjs in self.dec_objs], axis=3)
-    #                 h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.conv_ch])
-    #     return h
-
-    def conv_feedforward(self):
-        with torch.variable_scope("conv_feedforward"):
-            with torch.variable_scope("encoder"):
-                enc_out = self.encoder(self.input[:, :self.input_steps])
-            with torch.variable_scope("decoder"):
-                dec_out = self.decoder(enc_out)
-        return dec_out
+        output_seq = torch.stack(output_seq)
 
     def visualize_sequence(self):
         batch_size = 5
