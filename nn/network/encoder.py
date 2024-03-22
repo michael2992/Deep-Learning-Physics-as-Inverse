@@ -18,7 +18,7 @@ class ConvEncoder(nn.Module):
         self.conv_ch = conv_ch
         self.alt_vel = alt_vel
     def forward(self, x):
-        rang = torch.range(self.conv_input_shape[0], dtype=torch.float32)
+        rang = torch.range(self.conv_input_shape[0], self.conv_input_shape[1], dtype=torch.float32)
         grid_x, grid_y = torch.meshgrid(rang, rang)
         grid = torch.cat([grid_x[:,:,None], grid_y[:,:,None]], dim=2)
         grid = torch.tile(grid[None,:,:,:], [torch.shape(x)[0], 1, 1, 1])
