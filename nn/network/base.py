@@ -43,7 +43,7 @@ class BaseNet(nn.Module):
         for fn, args, kwargs in extra_fns:
             fn(*args, **kwargs)
 
-    def feedforward(self):
+    def feedforward(self, inputs):
         raise NotImplementedError
 
     def compute_loss(self):
@@ -177,6 +177,7 @@ class BaseNet(nn.Module):
             if eval_iterator.X.shape[0] < 100:
                 batch_size = eval_iterator.X.shape[0]
             inputs, targets = self.get_batch(batch_size, eval_iterator)
+            #print("inputs for feedforward: {}".format(inputs.shape))
             outputs = self.feedforward(inputs)
             results = {k: metric(outputs, targets).item() for k, metric in self.eval_metrics.items()}
 
