@@ -21,9 +21,9 @@ class ConvEncoder(nn.Module):
         rang = torch.range(self.conv_input_shape[0], self.conv_input_shape[1], dtype=torch.float32)
         grid_x, grid_y = torch.meshgrid(rang, rang)
         grid = torch.cat([grid_x[:,:,None], grid_y[:,:,None]], dim=2)
-        grid = torch.tile(grid[None,:,:,:], [torch.shape(x)[0], 1, 1, 1])
+        grid = torch.tile(grid[None,:,:,:], [x.shape[0], 1, 1, 1])
 
-        if self.input_shape[0] < 40:
+        if self.conv_input_shape[0] < 40:
             h = x
             h = shallow_unet(h, 8, self.n_objs, upsamp=True)
 
