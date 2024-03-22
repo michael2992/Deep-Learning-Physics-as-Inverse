@@ -24,7 +24,7 @@ datapoints = 0
 base_lr = 3e-4 
 optimizer = "rmsprop" # Default optimizer is rmsprop, change name if you want to use a different optimizer
 anneal_lr = True
-save_dir = "replace\this" # Replace this with an actual location
+save_dir = "runners\logs" # Replace this with an actual location
 use_ckpt = False
 ckpt_dir = "" # Replace with an actual location of a checkpoint if use_ckpt=true
 
@@ -70,7 +70,7 @@ def main():
                        input_size, encoder_type, decoder_type)
     
     network.build_optimizer(base_lr, optimizer, anneal_lr)
-    # network.initialize_graph(save_dir, use_ckpt, ckpt_dir)
+    network.initialize_graph(save_dir, use_ckpt, ckpt_dir)
 
     data_iterators = get_iterators(
                               os.path.join(
