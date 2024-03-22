@@ -135,7 +135,8 @@ class PhysicsNet(BaseNet):
         eval_losses = [self.pred_loss, self.extrap_loss, self.recons_loss]
         return train_loss, eval_losses
 
-    def forward(self, x):
+    def feedforward(self, x):
+        x = torch.stack([torch.tensor(value, dtype=torch.float32) for value in x.values()], dim=0)
         self.input = x
         self.output = self.conv_feedforward(self.input)
 
@@ -203,7 +204,7 @@ class PhysicsNet(BaseNet):
         if hasattr(self, 'pos_vel_seq'):
             fetches.append(self.pos_vel_seq)
 
-        output_seq, recons_seq, pos_vel_seq = self.forward(feed_dict, fetches)
+        output_seq, recons_seq, pos_vel_seq = self.feedforward(feed_dict, fetches)
 
         output_seq = np.concatenate([batch_x[:, :self.input_steps], output_seq], axis=1)
         recons_seq = np.concatenate([recons_seq, np.zeros((batch_size, self.extrap_steps) + recons_seq.shape[2:])], axis=1)
@@ -249,7 +250,7 @@ class PhysicsNet(BaseNet):
                 "transf_masks": self.transf_masks,
                 "enc_masks": self.enc_masks,
                 "masked_objs": self.masked_objs}
-        results = self.forward(feed_dict, fetches)
+        results = self.feedforward(feed_dict, fetches)
         np.savez_compressed(os.path.join(self.save_dir, "extra_outputs.npz"), **results)
         contents = results["contents"]
         templates = results["templates"]
