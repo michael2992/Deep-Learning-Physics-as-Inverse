@@ -43,8 +43,8 @@ class BaseNet(nn.Module):
         for fn, args, kwargs in extra_fns:
             fn(*args, **kwargs)
 
-    def feedforward(self):
-        raise NotImplementedError
+    def feedforward(self,x):
+        return self.conv_feedforward(x)
 
     def compute_loss(self):
         raise NotImplementedError

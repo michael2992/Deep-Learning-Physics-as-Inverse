@@ -72,7 +72,7 @@ class PhysicsNet(BaseNet):
         self.input_shape = [int(np.sqrt(input_size))]*2+[self.conv_ch]
 
         
-        
+        self.save_dir = "saved/"
 
         self.output_shape = self.input_shape
 
@@ -161,6 +161,7 @@ class PhysicsNet(BaseNet):
 
     def conv_feedforward(self, input_tensor):
         # Initialize LSTM states
+        print(input_tensor)
         h0 = torch.zeros(self.lstm_layers, input_tensor.size(0), self.recurrent_units).to(input_tensor.device)
         c0 = torch.zeros(self.lstm_layers, input_tensor.size(0), self.recurrent_units).to(input_tensor.device)
         
@@ -249,7 +250,9 @@ class PhysicsNet(BaseNet):
                 "transf_masks": self.transf_masks,
                 "enc_masks": self.enc_masks,
                 "masked_objs": self.masked_objs}
+        
         results = self.forward(feed_dict, fetches)
+
         np.savez_compressed(os.path.join(self.save_dir, "extra_outputs.npz"), **results)
         contents = results["contents"]
         templates = results["templates"]
