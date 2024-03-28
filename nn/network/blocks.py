@@ -4,7 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 """ Useful subnetwork components """
-
+# comment: In a PyTorch tensor with shape (N, C, H, W), dim=1 targets the C (channels) dimension.
+# In a TensorFlow tensor with shape (N, H, W, C), axis=-1 targets the C (channels) dimension.
 
 def unet(inp, base_channels, out_channels, upsamp=True):
     h = inp
@@ -47,61 +48,56 @@ def unet(inp, base_channels, out_channels, upsamp=True):
     h = conv_layer(h, out_channels, 1)
     return h
 
-def conv_layer(h, base_channels, out_channels):
-    print(type(h))
-    conv_layer = nn.Conv2d(in_channels=h.size(1), out_channels=base_channels, kernel_size=3, padding='same')#check h.size
-    h = conv_layer(h)
-    h = F.relu(h)
+def conv_layer(inp, out_channels, kernel_size, padding='same', activation=True):
+    conv = nn.Conv2d(inp.size(1), out_channels, kernel_size, padding=padding)
+    h = conv(inp)
+    if activation:
+        h = F.relu(h)
     return h
 
 def max_layer(h):
     print("MaxPool input shape",h.shape)
-    maxPool_layer = torch.nn.MaxPool2d(kernel_size=(2, 1), stride=(2, 1))
+    maxPool_layer = torch.nn.MaxPool2d(kernel_size=2, stride=2)
     h1 = maxPool_layer(h)
     print("h: {}".format(h1.shape))
     return h1
 
 
 def shallow_unet(inp, base_channels, out_channels, upsamp=True):
-    h = inp
-    print("h: {}".format(h.shape))
-    print("base channels: {}".format(base_channels))
+    h = inp.permute(0, 3, 1, 2)
+    print("h_shape", h.shape)
     h = conv_layer(h, base_channels, 3)
-    # print("h after first steps: {}".format(h.shape))
     h1 = conv_layer(h, base_channels, 3)
-    h = max_layer(h1)
+    h = F.max_pool2d(h1, 2, 2)
     h = conv_layer(h, base_channels*2, 3)
     h2 = conv_layer(h, base_channels*2, 3)
-    h = max_layer(h2)
+    h = F.max_pool2d(h2, 2, 2)
     h = conv_layer(h, base_channels*4, 3)
     h = conv_layer(h, base_channels*4, 3)
+    print("h_shape", h.shape)
     if upsamp:
-        print("UPPPh: {}".format(h.shape))
-        h = torch.nn.functional.interpolate(h, size=h2.shape[1:3])
-        h = conv_layer(h, base_channels*2, 3)
-        print("UPPPh: {}".format(h.shape))
+        h = F.interpolate(h, size=h2.size()[2:], mode='bilinear', align_corners=False)
+        h = conv_layer(h, base_channels*2, 3, activation=False)
     else:
-        h = torch.nn.ConvTranspose2d(h, base_channels*2, 3, 2, activation=None, padding="same")
-    print("h: {}".format(h.shape))
-    print("h2: {}".format(h2.shape))
-    h = torch.cat([h, h2], dim=-1)
+        h = nn.ConvTranspose2d(h.size(1), base_channels*2, 3, stride=2, padding=1)(h)
+    print("h_shape", h.shape)
+    h = torch.cat([h, h2], dim=1)
     h = conv_layer(h, base_channels*2, 3)
     h = conv_layer(h, base_channels*2, 3)
+    print("h_shape", h.shape)
     if upsamp:
-        # print("UPPPh: {}".format(h.shape))
-        h = torch.nn.functional.interpolate(h, size=h1.shape[1:3])
-        h = conv_layer(h, base_channels*2, 3)
-        # print("UPPPh: {}".format(h.shape))
+        h = F.interpolate(h, size=h1.size()[2:], mode='bilinear', align_corners=False)
+        h = conv_layer(h, base_channels*2, 3, activation=False)
     else:
-        h = torch.nn.ConvTranspose2d(h, base_channels, 3, 2, padding="same")
-    print("h: {}".format(h.shape))
-    print("h1: {}".format(h1.shape))
-    h = torch.cat([h, h1], dim=-1)
+        h = nn.ConvTranspose2d(h.size(1), base_channels, 3, stride=2, padding=1)(h)
+    print("h_shape", h.shape)
+    h = torch.cat([h, h1], dim=1)
+    print("h_shape", h.shape)
     h = conv_layer(h, base_channels, 3)
     h = conv_layer(h, base_channels, 3)
 
-    h = nn.Conv2d(h.size(-1), out_channels, 1, padding="same")
-
+    h = nn.Conv2d(h.size(1), out_channels, 1, padding='same')(h)
+    print("h_shape", h.shape)
     return h
 
 
