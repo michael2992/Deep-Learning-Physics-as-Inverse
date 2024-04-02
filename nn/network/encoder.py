@@ -16,6 +16,7 @@ class ConvEncoder(nn.Module):
         self.input_channels = input_channels
         self.n_objs = n_objs
         self.conv_input_shape = conv_input_shape
+        print("Conv input shape: {}".format(self.conv_input_shape))
         self.conv_ch = conv_ch
         self.alt_vel = alt_vel
 
@@ -24,7 +25,9 @@ class ConvEncoder(nn.Module):
         #grid_x, grid_y = torch.meshgrid(rang, rang)
         #grid = torch.cat([grid_x[:,:,None], grid_y[:,:,None]], dim=2)
         #grid = torch.tile(grid[None,:,:,:], [x.shape[0], 1, 1, 1])
-
+        print("Shape of x before transpose: {}".format(x.shape))
+        x = torch.transpose(x, -1, 1)
+        print("Shape of x after transpose: {}".format(x.shape))
         if self.conv_input_shape[0] < 40:
             h = x
             #h = shallow_unet(h, 8, self.n_objs, upsamp=True)
@@ -37,7 +40,7 @@ class ConvEncoder(nn.Module):
             self.masked_objs = [self.enc_masks[:,:,:,i:i+1]*x for i in range(self.n_objs)]
 
             h = torch.cat(self.masked_objs, axis=0)
-            h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0]*self.input_shape[1]*self.conv_ch])
+            h = torch.reshape(h, [h.shape[0], self.input_shape[0]*self.input_shape[1]*self.conv_ch]) # Remember that pytorch has a different order of dimensions than tf!!
 
         else:
             self.enc_masks = []
@@ -45,7 +48,7 @@ class ConvEncoder(nn.Module):
             h = x
             for _ in range(4):
                 #h = unet(h, 8, self.n_objs, upsamp=True)
-                unet = UNet(h, 8, self.n_objs)
+                unet = UNet(h, 16, self.n_objs) # base_channels = 16 in original code but 8 in ChatGPT version? 
                 h = unet.forward(h)
                 h = torch.cat([h, torch.ones_like(h[:,:,:,:1])], axis=-1)
                 h = torch.nn.functional.softmax(h, dim=-1)
