@@ -20,9 +20,9 @@ class UNet(Module):
         super().__init__()
 
         in_channels = input.shape[1] 
+        input_size = input.shape[2]
         self.depth = depth  # Depth of the UNet
         self.maxpool = MaxPool2d(kernel_size=2, stride=2) 
-        padding_out = 2 # Padding of the final layer
 
         # Encoder
         self.Encoder_layers = ModuleList([])
@@ -39,9 +39,8 @@ class UNet(Module):
             self.Decoder_layers.append(Block(base_channels*(2**i), base_channels*(2**(i-1))))
             self.UpConv_layers.append(ConvTranspose2d(base_channels*(2**i), base_channels*(2**(i-1)), kernel_size=2, stride=2))
 
-        if self.depth < 4: 
-            padding_out = 0 # Works for 36*36 input, might not work for other input size and depth combinations
-        self.output = Conv2d(base_channels, out_channels, kernel_size=1, padding=padding_out) # padding=2 to get a mask with the same HxW as the input image
+        padding_out = input_size - (2**(depth-1)) * (input_size // 2**(depth-1)) # Padding so the output mask has the same size as the input image, works for kernel=stride=1 
+        self.output = Conv2d(base_channels, out_channels, kernel_size=1, padding=padding_out) 
 
     def forward(self, x):
         # Encoder
@@ -49,7 +48,6 @@ class UNet(Module):
 
         for i in range(self.depth):
             x = self.Encoder_layers[i].forward(x)
-            #x = layer.forward(x)
             layers_to_copy.append(x)
             if i < self.depth-1:
                 x = self.maxpool(x)
