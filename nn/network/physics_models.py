@@ -11,7 +11,7 @@ from nn.network.base import BaseNet, OPTIMIZERS
 from nn.network.cells import BouncingODECell, SpringODECell, GravityODECell
 from nn.network.encoder import ConvEncoder,ConvDecoder, VelEncoder
 from nn.network import stn
-from nn.network.blocks import unet, shallow_unet, variable_from_network
+#from nn.network.blocks import UNet, variable_from_network
 from nn.utils.misc import log_metrics
 from nn.utils.viz import gallery, gif
 from nn.utils.math import sigmoid

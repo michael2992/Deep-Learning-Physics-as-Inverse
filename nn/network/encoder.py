@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from nn.network.blocks import unet, shallow_unet, variable_from_network
+#from nn.network.blocks import unet, shallow_unet, variable_from_network
+from nn.network.blocks import UNet, variable_from_network
 from nn.utils.misc import log_metrics
 from nn.utils.viz import gallery, gif
 from nn.utils.math import sigmoid
@@ -17,15 +18,18 @@ class ConvEncoder(nn.Module):
         self.conv_input_shape = conv_input_shape
         self.conv_ch = conv_ch
         self.alt_vel = alt_vel
+
     def forward(self, x):
-        rang = torch.range(self.conv_input_shape[0], self.conv_input_shape[1], dtype=torch.float32)
-        grid_x, grid_y = torch.meshgrid(rang, rang)
-        grid = torch.cat([grid_x[:,:,None], grid_y[:,:,None]], dim=2)
-        grid = torch.tile(grid[None,:,:,:], [x.shape[0], 1, 1, 1])
+        #rang = torch.range(self.conv_input_shape[0], self.conv_input_shape[1], dtype=torch.float32)
+        #grid_x, grid_y = torch.meshgrid(rang, rang)
+        #grid = torch.cat([grid_x[:,:,None], grid_y[:,:,None]], dim=2)
+        #grid = torch.tile(grid[None,:,:,:], [x.shape[0], 1, 1, 1])
 
         if self.conv_input_shape[0] < 40:
             h = x
-            h = shallow_unet(h, 8, self.n_objs, upsamp=True)
+            #h = shallow_unet(h, 8, self.n_objs, upsamp=True)
+            shallow_unet = UNet(h, 8, self.n_objs, depth=3)
+            h = shallow_unet.forward(h)
 
             h = torch.cat([h, torch.ones_like(h[:,:,:,:1])], axis=-1)
             h = torch.nn.functional.softmax(h, dim=-1)
@@ -40,7 +44,9 @@ class ConvEncoder(nn.Module):
             self.masked_objs = []
             h = x
             for _ in range(4):
-                h = unet(h, 8, self.n_objs, upsamp=True)
+                #h = unet(h, 8, self.n_objs, upsamp=True)
+                unet = UNet(h, 8, self.n_objs)
+                h = unet.forward(h)
                 h = torch.cat([h, torch.ones_like(h[:,:,:,:1])], axis=-1)
                 h = torch.nn.functional.softmax(h, dim=-1)
                 self.enc_masks.append(h)
@@ -76,7 +82,9 @@ class ConvDecoder(nn.Module):
         h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.conv_ch])
 
         if self.input_shape[0] < 40:
-            h = shallow_unet(h, 8, self.n_objs, upsamp=True)
+            #h = shallow_unet(h, 8, self.n_objs, upsamp=True)
+            shallow_unet = UNet(h, 8, self.n_objs, depth=3)
+            h = shallow_unet.forward(h)
             h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.n_objs])
             self.dec_masks = h
             self.dec_objs = [self.dec_masks[:,:,:,i:i+1]*inp for i in range(self.n_objs)]
@@ -88,7 +96,9 @@ class ConvDecoder(nn.Module):
             self.dec_masks = []
             self.dec_objs = []
             for _ in range(4):
-                h = unet(h, 8, self.n_objs, upsamp=True)
+                #h = unet(h, 8, self.n_objs, upsamp=True)
+                unet = UNet(h, 8, self.n_objs)
+                h = unet.forward(h)
                 h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.n_objs])
                 self.dec_masks.append(h)
                 self.dec_objs.append([h[:,:,:,i:i+1]*x for i in range(self.n_objs)])
@@ -106,6 +116,8 @@ class VelEncoder(nn.Module):
 
     def forward(self, x):
         h = x
-        h = shallow_unet(h, 8, self.n_objs*2, upsamp=True)
+        #h = shallow_unet(h, 8, self.n_objs*2, upsamp=True)
+        shallow_unet = UNet(h, 8, self.n_objs*2, depth=3)
+        h = shallow_unet.forward(h)
         h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0]*self.input_shape[1]*self.n_objs*2])
         return h 
