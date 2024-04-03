@@ -21,18 +21,13 @@ class ConvEncoder(nn.Module):
         self.alt_vel = alt_vel
 
     def forward(self, x):
-        #rang = torch.range(self.conv_input_shape[0], self.conv_input_shape[1], dtype=torch.float32)
-        #grid_x, grid_y = torch.meshgrid(rang, rang)
-        #grid = torch.cat([grid_x[:,:,None], grid_y[:,:,None]], dim=2)
-        #grid = torch.tile(grid[None,:,:,:], [x.shape[0], 1, 1, 1])
         print("Shape of x before transpose: {}".format(x.shape))
         x = torch.transpose(x, -1, 1)
         print("Shape of x after transpose: {}".format(x.shape))
         self.input_shape = x.shape
         print("self.conv_shape: {}".format(self.conv_input_shape))
+        h = x
         if self.conv_input_shape[0] < 40:
-            h = x
-            #h = shallow_unet(h, 8, self.n_objs, upsamp=True)
             shallow_unet = UNet(h, 8, self.n_objs, depth=3)
             h = shallow_unet.forward(h)
 
@@ -52,40 +47,39 @@ class ConvEncoder(nn.Module):
             # Produce x,y-coordinates (this part appears to be different from the paper description)
             print("Shape of h before reshaping: {}".format(h.shape))
             h = torch.reshape(h, [h.shape[0], self.conv_input_shape[0]*self.conv_input_shape[0]*self.conv_ch]) 
-            print("Shape of h after reshaping: {}".format(h.shape))
-            mask_net = MaskNetwork(h.shape[1])
-            h = mask_net.forward(h)
-            print("h after location network: {}".format(h.shape))
-            h = torch.cat(torch.split(h, self.n_objs, 0), axis=1)
-            print("Shape of g after split and concat: {}".format(h.shape))
-
-            # Pass through tanh activation layer to get output
-            h = torch.tanh(h)*(self.conv_input_shape[0]/2) + (self.conv_input_shape[0]/2)
-            print("Shape of h after encoding: {}".format(h[0].shape))
-
+            print("Shape of h after reshaping: {}".format(h.shape)) 
         else:
-            self.enc_masks = []
-            self.masked_objs = []
-            h = x
-            for _ in range(4):
-                #h = unet(h, 8, self.n_objs, upsamp=True)
-                unet = UNet(h, 16, self.n_objs) # base_channels = 16 in original code but 8 in the line above?
-                h = unet.forward(h)
-                h = torch.cat([h, torch.ones_like(h[:,:1,:,:])], axis=1)
-                h = torch.nn.functional.softmax(h, dim=1)
-                self.enc_masks.append(h)
-                self.masked_objs.append([h[:,i:i+1,:,:]*x for i in range(self.n_objs)])
+            unet = UNet(h, 16, self.n_objs) # base_channels = 16 in original code but was 8 in our version?
+            h = unet.forward(h)
+            h = torch.cat([h, torch.ones_like(h[:,:1,:,:])], axis=1)
+            h = torch.nn.functional.softmax(h, dim=1)
 
-            h = torch.cat([torch.cat(mobjs, axis=0) for mobjs in self.masked_objs], axis=0)
-            h = torch.reshape(h, [h.shape[0], self.conv_input_shape[0]*self.conv_input_shape[0]*self.conv_ch])
+            self.enc_masks = h
+            self.masked_objs = [self.enc_masks[:,i:i+1,:,:]*x for i in range(self.n_objs)]
+            h = torch.cat(self.masked_objs, axis=0)
+
+            # Pass through average pooling2d layer (not mentioned in the paper) and flatten
+            h = torch.nn.functional.avg_pool2d(h, 2, 2)
+            h = torch.flatten(h)
+
+        # Pass through 2-layer location network
+        location_net = LocationNetwork(h.shape[1])
+        h = location_net.forward(h)
+        print("h after location network: {}".format(h.shape))
+        h = torch.cat(torch.split(h, self.n_objs, 0), axis=1)
+        print("Shape of g after split and concat: {}".format(h.shape))
+
+        # Pass through tanh activation layer to get output
+        h = torch.tanh(h)*(self.conv_input_shape[0]/2) + (self.conv_input_shape[0]/2)
+        print("Shape of h after encoding: {}".format(h[0].shape))
 
         if self.alt_vel:
             vels = self.vel_encoder(x)
             h = torch.cat([h, vels], axis=1)
             h = torch.nn.functional.relu(h)
 
-        cell = self.cell(self.recurrent_units)
-        c, h = cell(h)
+        #cell = self.cell(self.recurrent_units)
+        #c, h = cell(h)
         return h
 
 class ConvDecoder(nn.Module):
@@ -146,8 +140,8 @@ class VelEncoder(nn.Module):
         h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0]*self.input_shape[1]*self.n_objs*2])
         return h 
     
-class MaskNetwork(nn.Module):
-        """The 2-layer location network described in the paper (even though it has 3 layers??)."""
+class LocationNetwork(nn.Module):
+        """The 2-layer location network described in the paper.""" 
         def __init__(self, input):
             super().__init__()
             self.layer1 = nn.Linear(input, 200)
