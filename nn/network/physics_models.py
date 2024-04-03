@@ -186,7 +186,7 @@ class PhysicsNet(BaseNet):
         # Rollout ODE and decoder
         for t in range(self.pred_steps+self.extrap_steps):
             # Rollout
-            pos, vel = self.rollout_cell(pos, vel)  # Assuming rollout_cell is correctly defined
+            pos, vel = self.rollout_cell.forward(pos, vel)  # Assuming rollout_cell is correctly defined
 
             # Decode
             out = self.decoder(pos)
