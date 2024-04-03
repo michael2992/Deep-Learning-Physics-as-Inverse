@@ -16,7 +16,7 @@ class ConvEncoder(nn.Module):
         self.input_channels = input_channels
         self.n_objs = n_objs
         self.conv_input_shape = conv_input_shape
-        print("Conv input shape: {}".format(self.conv_input_shape))
+        #print("Conv input shape: {}".format(self.conv_input_shape))
         self.conv_ch = conv_ch
         self.alt_vel = alt_vel
 
@@ -28,19 +28,40 @@ class ConvEncoder(nn.Module):
         print("Shape of x before transpose: {}".format(x.shape))
         x = torch.transpose(x, -1, 1)
         print("Shape of x after transpose: {}".format(x.shape))
+        self.input_shape = x.shape
+        print("self.conv_shape: {}".format(self.conv_input_shape))
         if self.conv_input_shape[0] < 40:
             h = x
             #h = shallow_unet(h, 8, self.n_objs, upsamp=True)
             shallow_unet = UNet(h, 8, self.n_objs, depth=3)
             h = shallow_unet.forward(h)
 
-            h = torch.cat([h, torch.ones_like(h[:,:,:,:1])], axis=-1)
-            h = torch.nn.functional.softmax(h, dim=-1)
-            self.enc_masks = h
-            self.masked_objs = [self.enc_masks[:,:,:,i:i+1]*x for i in range(self.n_objs)]
+            # Add learnable bg mask
+            print("Shape of h before adding learnable bg mask: {}".format(h.shape)) # (batch, channels, h, w)
+            h = torch.cat([h, torch.ones_like(h[:,:1,:,:])], axis=1)
+            print("Shape of h after adding learnable bg mask: {}".format(h.shape)) # Should be (batch, channels+1, h, w) 
 
+            # Pass through softmax
+            h = torch.nn.functional.softmax(h, dim=1)
+
+            # Multiply input image with each mask
+            self.enc_masks = h
+            self.masked_objs = [self.enc_masks[:,i:i+1,:,:]*x for i in range(self.n_objs)]
             h = torch.cat(self.masked_objs, axis=0)
-            h = torch.reshape(h, [h.shape[0], self.input_shape[0]*self.input_shape[1]*self.conv_ch]) # Remember that pytorch has a different order of dimensions than tf!!
+
+            # Produce x,y-coordinates (this part appears to be different from the paper description)
+            print("Shape of h before reshaping: {}".format(h.shape))
+            h = torch.reshape(h, [h.shape[0], self.conv_input_shape[0]*self.conv_input_shape[0]*self.conv_ch]) 
+            print("Shape of h after reshaping: {}".format(h.shape))
+            mask_net = MaskNetwork(h.shape[1])
+            h = mask_net.forward(h)
+            print("h after location network: {}".format(h.shape))
+            h = torch.cat(torch.split(h, self.n_objs, 0), axis=1)
+            print("Shape of g after split and concat: {}".format(h.shape))
+
+            # Pass through tanh activation layer to get output
+            h = torch.tanh(h)*(self.conv_input_shape[0]/2) + (self.conv_input_shape[0]/2)
+            print("Shape of h after encoding: {}".format(h[0].shape))
 
         else:
             self.enc_masks = []
@@ -48,15 +69,15 @@ class ConvEncoder(nn.Module):
             h = x
             for _ in range(4):
                 #h = unet(h, 8, self.n_objs, upsamp=True)
-                unet = UNet(h, 16, self.n_objs) # base_channels = 16 in original code but 8 in ChatGPT version? 
+                unet = UNet(h, 16, self.n_objs) # base_channels = 16 in original code but 8 in the line above?
                 h = unet.forward(h)
-                h = torch.cat([h, torch.ones_like(h[:,:,:,:1])], axis=-1)
-                h = torch.nn.functional.softmax(h, dim=-1)
+                h = torch.cat([h, torch.ones_like(h[:,:1,:,:])], axis=1)
+                h = torch.nn.functional.softmax(h, dim=1)
                 self.enc_masks.append(h)
-                self.masked_objs.append([h[:,:,:,i:i+1]*x for i in range(self.n_objs)])
+                self.masked_objs.append([h[:,i:i+1,:,:]*x for i in range(self.n_objs)])
 
             h = torch.cat([torch.cat(mobjs, axis=0) for mobjs in self.masked_objs], axis=0)
-            h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0]*self.input_shape[1]*self.conv_ch])
+            h = torch.reshape(h, [h.shape[0], self.conv_input_shape[0]*self.conv_input_shape[0]*self.conv_ch])
 
         if self.alt_vel:
             vels = self.vel_encoder(x)
@@ -124,3 +145,20 @@ class VelEncoder(nn.Module):
         h = shallow_unet.forward(h)
         h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0]*self.input_shape[1]*self.n_objs*2])
         return h 
+    
+class MaskNetwork(nn.Module):
+        """The 2-layer location network described in the paper (even though it has 3 layers??)."""
+        def __init__(self, input):
+            super().__init__()
+            self.layer1 = nn.Linear(input, 200)
+            self.relu = nn.ReLU()
+            self.layer2 = nn.Linear(200, 200)
+            self.output = nn.Linear(200, 2)
+
+        def forward(self, x):
+            x = self.layer1(x)
+            x = self.relu(x)
+            x = self.layer2(x)
+            x = self.relu(x)
+            output = self.output(x)
+            return output
