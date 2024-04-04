@@ -110,7 +110,7 @@ class ConvDecoder(nn.Module):
         vn_cont = VariableNetwork([self.n_objs, self.conv_ch, tmpl_size, tmpl_size])
         contents = vn_cont.forward(x)
         self.contents = contents
-        contents = torch.nn.Sigmoid(contents)
+        contents = torch.nn.functional.sigmoid(contents)
         joint = torch.cat([template, contents], axis=1)
 
         c2t = torch.from_numpy
@@ -130,7 +130,7 @@ class ConvDecoder(nn.Module):
             out_temp_cont.append(torch.split(out_join, 1))
         
         background_content = VariableNetwork([1]+torch.shape(self.inp)).forward(x)
-        self.background_content = torch.nn.Sigmoid(background_content)
+        self.background_content = torch.nn.functional.sigmoid(background_content)
         background_content = torch.tile(self.background_content, [batch_size, 1, 1,1])
         contents = [p[1] for p in out_temp_cont]
         contents.append(background_content)
