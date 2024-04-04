@@ -94,7 +94,7 @@ class PhysicsNet(BaseNet):
         self.extra_test_fns.append((self.visualize_sequence, [], {}))
 
         self.conv_encoder = ConvEncoder(self.input_shape, self.n_objs, self.conv_input_shape, self.conv_ch, self.alt_vel).forward
-        self.vel_encoder = VelEncoder(self.input_shape, self.n_objs, self.conv_input_shape).forward  # Adjust parameters as needed
+        self.vel_encoder = VelEncoder(self.input_shape, self.n_objs, self.conv_input_shape, self.coord_units, self.input_steps).forward  # Adjust parameters as needed
         self.conv_decoder = ConvDecoder(self.input_shape, self.n_objs, self.conv_input_shape, self.conv_ch, self.alt_vel).forward
 
         self.lstms = nn.LSTM(input_size=self.recurrent_units, hidden_size=self.recurrent_units, num_layers=self.lstm_layers)

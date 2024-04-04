@@ -126,20 +126,31 @@ class ConvDecoder(nn.Module):
         return h
 
 class VelEncoder(nn.Module):
-    def __init__(self, input_channels, n_objs, input_shape):
+    """Estimates the velocity."""
+    def __init__(self, input_channels, n_objs, input_shape, coord_units, input_steps):
         super(VelEncoder, self).__init__()
         self.input_channels = input_channels
         self.n_objs = n_objs
         self.input_shape = input_shape
+        self.coord_units = coord_units
+        self.input_steps = input_steps
+
+        self.layer1 = nn.Linear(input, 100)
+        self.tanh = nn.Tanh()
+        self.layer2 = nn.Linear(100, 100)
+        self.output = nn.Linear(100, self.coord_units//self.n_objs//2)
 
     def forward(self, x):
-        h = x
-        #h = shallow_unet(h, 8, self.n_objs*2, upsamp=True)
-        shallow_unet = UNet(h, 8, self.n_objs*2, depth=3)
-        h = shallow_unet.forward(h)
-        h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0]*self.input_shape[1]*self.n_objs*2])
-        return h 
-    
+        x = torch.split(x, self.n_objs, 2)
+        x - torch.cat(x, dim=0)
+        x = torch.reshape(x, [x.shape[0], self.input_steps*self.coord_units//self.n_objs//2])
+        x = self.layer1(x)
+        x  = self.tanh(x)
+        x = self.layer2(x)
+        x = self.tanh(x)
+        output = self.output(x)
+        return output
+
 class LocationNetwork(nn.Module):
         """The 2-layer location network described in the paper.""" 
         def __init__(self, input):
