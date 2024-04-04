@@ -50,7 +50,7 @@ class PhysicsNet(BaseNet):
                  autoencoder_loss=0.0,
                  alt_vel=False,
                  color=False,
-                 input_size=36*36,
+                 input_size=32*32,
                  encoder_type="conv_encoder",
                  decoder_type="conv_st_decoder"):
 
