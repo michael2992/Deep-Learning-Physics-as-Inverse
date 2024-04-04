@@ -90,9 +90,13 @@ class ConvDecoder(nn.Module):
         self.conv_input_shape = conv_input_shape
         self.conv_ch = conv_ch
         self.alt_vel = alt_vel
+        #self.batch_size = batch_size # Given in physics_models
+        #self.tmpl_size = self.conv_input_shape[0]//2
         
     def forward(self, x):
-        if self.alt_vel:
+        batch_size = x.shape[0]
+        tmpl_size = self.conv_input_shape[0]//2
+        """if self.alt_vel:
             inp = inp[:,:-self.n_objs*2]
         h = x
         h = torch.nn.functional.relu(h)
@@ -123,7 +127,7 @@ class ConvDecoder(nn.Module):
 
             h = torch.cat([torch.cat(dobjs, axis=3) for dobjs in self.dec_objs], axis=3)
             h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.conv_ch])
-        return h
+        return h"""
 
 class VelEncoder(nn.Module):
     """Estimates the velocity."""
