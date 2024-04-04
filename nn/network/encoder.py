@@ -83,51 +83,48 @@ class ConvEncoder(nn.Module):
         return h
 
 class ConvDecoder(nn.Module):
-    def __init__(self, input_shape, n_objs, conv_input_shape, conv_ch, alt_vel):
+    def __init__(self, inp, n_objs, conv_input_shape, conv_ch, alt_vel):
         super(ConvDecoder, self).__init__()
-        self.input_shape = input_shape
+        self.inp = inp
         self.n_objs = n_objs
         self.conv_input_shape = conv_input_shape
         self.conv_ch = conv_ch
         self.alt_vel = alt_vel
-        #self.batch_size = batch_size # Given in physics_models
-        #self.tmpl_size = self.conv_input_shape[0]//2
-        
+         
     def forward(self, x):
         batch_size = x.shape[0]
         tmpl_size = self.conv_input_shape[0]//2
-        """if self.alt_vel:
-            inp = inp[:,:-self.n_objs*2]
-        h = x
-        h = torch.nn.functional.relu(h)
-        h = torch.nn.functional.relu(h)
-        h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.conv_ch])
 
-        if self.input_shape[0] < 40:
-            #h = shallow_unet(h, 8, self.n_objs, upsamp=True)
-            shallow_unet = UNet(h, 8, self.n_objs, depth=3)
-            h = shallow_unet.forward(h)
-            h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.n_objs])
-            self.dec_masks = h
-            self.dec_objs = [self.dec_masks[:,:,:,i:i+1]*inp for i in range(self.n_objs)]
+        logsigma = torch.nn.Parameter(torch.tensor(torch.log(1.0), dtype=torch.float32))
 
-            h = torch.cat(self.dec_objs, axis=3)
-            h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.conv_ch])
+        # Calculate sigma by taking the exponential of logsigma
+        sigma = torch.exp(logsigma)
 
-        else:
-            self.dec_masks = []
-            self.dec_objs = []
-            for _ in range(4):
-                #h = unet(h, 8, self.n_objs, upsamp=True)
-                unet = UNet(h, 8, self.n_objs)
-                h = unet.forward(h)
-                h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.n_objs])
-                self.dec_masks.append(h)
-                self.dec_objs.append([h[:,:,:,i:i+1]*x for i in range(self.n_objs)])
+        # if self.input_shape[0] < 40:
+        #     #h = shallow_unet(h, 8, self.n_objs, upsamp=True)
+        #     shallow_unet = UNet(h, 8, self.n_objs, depth=3)
+        #     h = shallow_unet.forward(h)
+        #     h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.n_objs])
+        #     self.dec_masks = h
+        #     self.dec_objs = [self.dec_masks[:,:,:,i:i+1]*inp for i in range(self.n_objs)]
 
-            h = torch.cat([torch.cat(dobjs, axis=3) for dobjs in self.dec_objs], axis=3)
-            h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.conv_ch])
-        return h"""
+        #     h = torch.cat(self.dec_objs, axis=3)
+        #     h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.conv_ch])
+
+        # else:
+        #     self.dec_masks = []
+        #     self.dec_objs = []
+        #     for _ in range(4):
+        #         #h = unet(h, 8, self.n_objs, upsamp=True)
+        #         unet = UNet(h, 8, self.n_objs)
+        #         h = unet.forward(h)
+        #         h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.n_objs])
+        #         self.dec_masks.append(h)
+        #         self.dec_objs.append([h[:,:,:,i:i+1]*x for i in range(self.n_objs)])
+
+        #     h = torch.cat([torch.cat(dobjs, axis=3) for dobjs in self.dec_objs], axis=3)
+        #     h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.conv_ch])
+        return h
 
 class VelEncoder(nn.Module):
     """Estimates the velocity."""
