@@ -164,11 +164,26 @@ def shallow_unet(inp, base_channels, out_channels, upsamp=True):
     return h"""
 
 # Replace with a class
-def variable_from_network(shape):
+"""def variable_from_network(shape):
     # Produces a variable from a vector of 1's. 
     # Improves learning speed of contents and masks.
     var = torch.ones([1,10])
     var = torch.nn.Linear(var, 200, activation=torch.nn.Tanh())
     var = torch.nn.Linear(var, np.prod(shape), activation=None)
     var = var.view(shape)
-    return var
+    return var"""
+
+class VariableNetwork(Module):
+    """Produces a variable from a vector of 1's and improves learning speed of contents and masks."""
+    def __init__(self, shape):
+        super().__init__()
+        var = torch.ones([1,10])
+        self.layer1 = nn.Linear(var, 200)
+        self.tanh = nn.Tanh()
+        self.output = nn.Linear(200, np.prod(shape))
+
+    def forward(self, x):
+        x = self.layer1(x)
+        x = self.tanh(x)
+        output = self.output(x)
+        return output

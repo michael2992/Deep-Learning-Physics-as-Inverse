@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 #from nn.network.blocks import unet, shallow_unet, variable_from_network
-from nn.network.blocks import UNet, variable_from_network
+from nn.network.blocks import UNet, VariableNetwork
 from nn.utils.misc import log_metrics
 from nn.utils.viz import gallery, gif
 from nn.utils.math import sigmoid
@@ -90,23 +90,22 @@ class ConvDecoder(nn.Module):
         self.conv_input_shape = conv_input_shape
         self.conv_ch = conv_ch
         self.alt_vel = alt_vel
-        
-        
+         
     def forward(self, x):
-
-        batch_size = torch.shape(x)[0]
+        batch_size = x.shape[0]
         tmpl_size = self.conv_input_shape[0]//2
 
         logsigma = torch.nn.Parameter(torch.tensor(torch.log(1.0), dtype=torch.float32))
 
         # Calculate sigma by taking the exponential of logsigma
         sigma = torch.exp(logsigma)
-
-        template = variable_from_network([self.n_objs, tmpl_size, tmpl_size, 1])
+        vn_templ = VariableNetwork([self.n_objs, tmpl_size, tmpl_size, 1])
+        template = vn_templ.forward(x)
         self.template = template
         template = torch.tile(template, [1,1,1,3])+5
 
-        contents = variable_from_network([self.n_objs, tmpl_size, tmpl_size, self.conv_ch])
+        vn_cont = VariableNetwork([self.n_objs, tmpl_size, tmpl_size, self.conv_ch])
+        contents = vn_cont.forward(x)
         self.contents = contents
         contents = torch.nn.Sigmoid(contents)
         joint = torch.cat([template, contents], axis=-1)
