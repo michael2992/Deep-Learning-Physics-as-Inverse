@@ -162,13 +162,13 @@ class VelEncoder(nn.Module):
     """Estimates the velocity."""
     def __init__(self, input_channels, n_objs, input_shape, coord_units, input_steps):
         super(VelEncoder, self).__init__()
-        self.input_channels = input_channels
+        self.input_channels = input_channels[0]
         self.n_objs = n_objs
         self.input_shape = input_shape
         self.coord_units = coord_units
         self.input_steps = input_steps
 
-        self.layer1 = nn.Linear(input, 100)
+        self.layer1 = nn.Linear(self.input_channels, 100)
         self.tanh = nn.Tanh()
         self.layer2 = nn.Linear(100, 100)
         self.output = nn.Linear(100, self.coord_units//self.n_objs//2)
