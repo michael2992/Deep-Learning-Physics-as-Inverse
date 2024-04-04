@@ -7,7 +7,7 @@ from nn.network.blocks import UNet, variable_from_network
 from nn.utils.misc import log_metrics
 from nn.utils.viz import gallery, gif
 from nn.utils.math import sigmoid
-
+from nn.network.stn import SpatialTransformer
 
 class ConvEncoder(nn.Module):
     def __init__(self, input_channels, n_objs, conv_input_shape, conv_ch, alt_vel):
@@ -102,7 +102,30 @@ class ConvDecoder(nn.Module):
         # Calculate sigma by taking the exponential of logsigma
         sigma = torch.exp(logsigma)
 
+        template = variable_from_network([self.n_objs, tmpl_size, tmpl_size, 1])
+        self.template = template
+        template = torch.tile(template, [1,1,1,3])+5
 
+        contents = variable_from_network([self.n_objs, tmpl_size, tmpl_size, self.conv_ch])
+        self.contents = contents
+        contents = torch.nn.Sigmoid(contents)
+        joint = torch.cat([template, contents], axis=-1)
+
+        c2t = torch.from_numpy
+
+        out_temp_cont = []
+
+        for loc, join in zip(torch.split(x, self.n_objs, -1), torch.split(joint, self.n_objs, 0)):
+            theta0 = torch.tile(c2t([sigma]), [torch.shape(x)[0]])
+            theta1 =  torch.tile(c2t([0.0]), [torch.shape(x)[0]])
+            theta2 = (self.conv_input_shape[0]/2-loc[:,0])/tmpl_size*sigma
+            theta3 =  torch.tile(c2t([0.0]), [torch.shape(x)[0]])
+            theta4 = torch.tile(c2t([sigma]), [torch.shape(x)[0]])
+            theta5 = (self.conv_input_shape[0]/2-loc[:,1])/tmpl_size*sigma
+            theta = torch.stack([theta0, theta1, theta2, theta3, theta4, theta5], axis=1)
+
+            out_join = SpatialTransformer(torch.tile(join, [torch.shape(x)[0], 1, 1, 1]), theta, self.conv_input_shape[:2])
+            
         # if self.alt_vel:
         #     inp = inp[:,:-self.n_objs*2]
         # h = x
