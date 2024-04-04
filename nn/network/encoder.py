@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 
 #from nn.network.blocks import unet, shallow_unet, variable_from_network
 from nn.network.blocks import UNet, VariableNetwork
@@ -72,7 +73,7 @@ class ConvEncoder(nn.Module):
 
         # Pass through tanh activation layer to get output
         h = torch.tanh(h)*(self.conv_input_shape[0]/2) + (self.conv_input_shape[0]/2)
-        print("Shape of h after encoding: {}".format(h[0].shape))
+        print("Shape of h after encoding: {}".format(h.shape))
 
         if self.alt_vel:
             vels = self.vel_encoder(x)
@@ -105,7 +106,7 @@ class ConvDecoder(nn.Module):
         vn_templ = VariableNetwork([self.n_objs, 1, tmpl_size, tmpl_size])
         template = vn_templ.forward(x)
         self.template = template
-        template = torch.tile(template, [1,1,1,3])+5
+        template = torch.tile(template, [1,3,1,1])+5
 
         vn_cont = VariableNetwork([self.n_objs, self.conv_ch, tmpl_size, tmpl_size])
         contents = vn_cont.forward(x)
@@ -118,18 +119,18 @@ class ConvDecoder(nn.Module):
         out_temp_cont = []
 
         for loc, join in zip(torch.split(x, self.n_objs, -1), torch.split(joint, self.n_objs, 0)):
-            theta0 = torch.tile(c2t([sigma]), [torch.shape(x)[0]])
-            theta1 =  torch.tile(c2t([0.0]), [torch.shape(x)[0]])
+            theta0 = torch.tile(c2t(sigma.detach().numpy()), [x.shape[0]])
+            theta1 =  torch.tile(c2t(np.array([0.0])), [x.shape[0]])
             theta2 = (self.conv_input_shape[0]/2-loc[:,0])/tmpl_size*sigma
-            theta3 =  torch.tile(c2t([0.0]), [torch.shape(x)[0]])
-            theta4 = torch.tile(c2t([sigma]), [torch.shape(x)[0]])
+            theta3 =  torch.tile(c2t(np.array([0.0])), [x.shape[0]])
+            theta4 = torch.tile(c2t(sigma.detach().numpy()), [x.shape[0]])
             theta5 = (self.conv_input_shape[0]/2-loc[:,1])/tmpl_size*sigma
             theta = torch.stack([theta0, theta1, theta2, theta3, theta4, theta5], axis=1)
 
-            out_join = SpatialTransformer(torch.tile(join, [torch.shape(x)[0], 1, 1, 1]), theta, self.conv_input_shape[:2])
+            out_join = SpatialTransformer(torch.tile(join, [x.shape[0], 1, 1, 1]), theta, self.conv_input_shape[:2])
             out_temp_cont.append(torch.split(out_join, 1))
         
-        background_content = VariableNetwork([1]+torch.shape(self.inp)).forward(x)
+        background_content = VariableNetwork([1]+(self.inp).shape).forward(x)
         self.background_content = torch.nn.functional.sigmoid(background_content)
         background_content = torch.tile(self.background_content, [batch_size, 1, 1,1])
         contents = [p[1] for p in out_temp_cont]
