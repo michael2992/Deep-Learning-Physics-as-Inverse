@@ -20,6 +20,7 @@ class ConvEncoder(nn.Module):
         self.conv_ch = conv_ch
         self.alt_vel = alt_vel
 
+
     def forward(self, x):
         print("Shape of x before transpose: {}".format(x.shape))
         x = torch.transpose(x, -1, 1)
@@ -90,27 +91,27 @@ class ConvDecoder(nn.Module):
         self.conv_input_shape = conv_input_shape
         self.conv_ch = conv_ch
         self.alt_vel = alt_vel
+        self.logsigma = torch.nn.Parameter(torch.log(torch.tensor(1.0, dtype=torch.float32)))
+
          
     def forward(self, x):
         batch_size = x.shape[0]
         tmpl_size = self.conv_input_shape[0]//2
         log_tensor = torch.ones(tmpl_size, dtype=torch.float32)
 
-        logsigma = torch.nn.Parameter(torch.tensor(torch.log(log_tensor), dtype=torch.float32))
 
         # Calculate sigma by taking the exponential of logsigma
-        sigma = torch.exp(logsigma)
-        print("Templ size is: {}".format(tmpl_size))
-        vn_templ = VariableNetwork([self.n_objs, tmpl_size, tmpl_size, 1])
+        sigma = torch.exp(self.logsigma)
+        vn_templ = VariableNetwork([self.n_objs, 1, tmpl_size, tmpl_size])
         template = vn_templ.forward(x)
         self.template = template
         template = torch.tile(template, [1,1,1,3])+5
 
-        vn_cont = VariableNetwork([self.n_objs, tmpl_size, tmpl_size, self.conv_ch])
+        vn_cont = VariableNetwork([self.n_objs, self.conv_ch, tmpl_size, tmpl_size])
         contents = vn_cont.forward(x)
         self.contents = contents
         contents = torch.nn.Sigmoid(contents)
-        joint = torch.cat([template, contents], axis=-1)
+        joint = torch.cat([template, contents], axis=1)
 
         c2t = torch.from_numpy
 
@@ -126,39 +127,24 @@ class ConvDecoder(nn.Module):
             theta = torch.stack([theta0, theta1, theta2, theta3, theta4, theta5], axis=1)
 
             out_join = SpatialTransformer(torch.tile(join, [torch.shape(x)[0], 1, 1, 1]), theta, self.conv_input_shape[:2])
-            
-        # if self.alt_vel:
-        #     inp = inp[:,:-self.n_objs*2]
-        # h = x
-        # h = torch.nn.functional.relu(h)
-        # h = torch.nn.functional.relu(h)
-        # h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.conv_ch])
+            out_temp_cont.append(torch.split(out_join, 1))
+        
+        background_content = VariableNetwork([1]+torch.shape(self.inp)).forward(x)
+        self.background_content = torch.nn.Sigmoid(background_content)
+        background_content = torch.tile(self.background_content, [batch_size, 1, 1,1])
+        contents = [p[1] for p in out_temp_cont]
+        contents.append(background_content)
+        self.transf_contents = contents
 
-        # if self.input_shape[0] < 40:
-        #     #h = shallow_unet(h, 8, self.n_objs, upsamp=True)
-        #     shallow_unet = UNet(h, 8, self.n_objs, depth=3)
-        #     h = shallow_unet.forward(h)
-        #     h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.n_objs])
-        #     self.dec_masks = h
-        #     self.dec_objs = [self.dec_masks[:,:,:,i:i+1]*inp for i in range(self.n_objs)]
+        background_mask = torch.ones_like(out_temp_cont[0][0])
+        masks = torch.stack([p[0]-5 for p in out_temp_cont]+[background_mask], axis=1)
+        masks = torch.nn.Softmax(masks, axis=1)
+        masks = torch.unbind(masks, axis=1)
+        self.transf_masks = masks
 
-        #     h = torch.cat(self.dec_objs, axis=3)
-        #     h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.conv_ch])
-
-        # else:
-        #     self.dec_masks = []
-        #     self.dec_objs = []
-        #     for _ in range(4):
-        #         #h = unet(h, 8, self.n_objs, upsamp=True)
-        #         unet = UNet(h, 8, self.n_objs)
-        #         h = unet.forward(h)
-        #         h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.n_objs])
-        #         self.dec_masks.append(h)
-        #         self.dec_objs.append([h[:,:,:,i:i+1]*x for i in range(self.n_objs)])
-
-        #     h = torch.cat([torch.cat(dobjs, axis=3) for dobjs in self.dec_objs], axis=3)
-        #     h = torch.reshape(h, [torch.shape(h)[0], self.input_shape[0], self.input_shape[1], self.conv_ch])
-        return h
+        out = torch.sum([m*c for m,c in zip(masks, contents)])
+        
+        return out
 
 class VelEncoder(nn.Module):
     """Estimates the velocity."""
