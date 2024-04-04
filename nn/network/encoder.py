@@ -84,9 +84,9 @@ class ConvEncoder(nn.Module):
         return h
 
 class ConvDecoder(nn.Module):
-    def __init__(self, inp, n_objs, conv_input_shape, conv_ch, alt_vel):
+    def __init__(self, inp, n_objs, conv_input_shape, conv_ch, alt_vel=False):
         super(ConvDecoder, self).__init__()
-        self.inp = inp
+        self.inp = list(inp)
         self.n_objs = n_objs
         self.conv_input_shape = conv_input_shape
         self.conv_ch = conv_ch
