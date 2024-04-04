@@ -20,6 +20,7 @@ class ConvEncoder(nn.Module):
         self.conv_ch = conv_ch
         self.alt_vel = alt_vel
 
+
     def forward(self, x):
         print("Shape of x before transpose: {}".format(x.shape))
         x = torch.transpose(x, -1, 1)
@@ -90,15 +91,16 @@ class ConvDecoder(nn.Module):
         self.conv_input_shape = conv_input_shape
         self.conv_ch = conv_ch
         self.alt_vel = alt_vel
+        self.logsigma = torch.nn.Parameter(torch.log(torch.tensor(1.0, dtype=torch.float32)))
+
          
     def forward(self, x):
         batch_size = x.shape[0]
         tmpl_size = self.conv_input_shape[0]//2
 
-        logsigma = torch.nn.Parameter(torch.tensor(torch.log(1.0), dtype=torch.float32))
 
         # Calculate sigma by taking the exponential of logsigma
-        sigma = torch.exp(logsigma)
+        sigma = torch.exp(self.logsigma)
         vn_templ = VariableNetwork([self.n_objs, 1, tmpl_size, tmpl_size])
         template = vn_templ.forward(x)
         self.template = template
