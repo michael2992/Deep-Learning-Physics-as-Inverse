@@ -179,7 +179,8 @@ class VariableNetwork(Module):
         super().__init__()
         self.shape = shape
         self.var = torch.ones([1,10])
-        self.layer1 = nn.Linear(self.var[0], 200)
+        print("var[0]: {}".format(self.var[0]))
+        self.layer1 = nn.Linear(10, 200)
         self.tanh = nn.Tanh()
         self.output = nn.Linear(200, np.prod(shape))
 
