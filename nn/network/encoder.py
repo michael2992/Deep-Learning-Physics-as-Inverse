@@ -94,11 +94,13 @@ class ConvDecoder(nn.Module):
     def forward(self, x):
         batch_size = x.shape[0]
         tmpl_size = self.conv_input_shape[0]//2
+        log_tensor = torch.ones(tmpl_size, dtype=torch.float32)
 
-        logsigma = torch.nn.Parameter(torch.tensor(torch.log(1.0), dtype=torch.float32))
+        logsigma = torch.nn.Parameter(torch.tensor(torch.log(log_tensor), dtype=torch.float32))
 
         # Calculate sigma by taking the exponential of logsigma
         sigma = torch.exp(logsigma)
+        print("Templ size is: {}".format(tmpl_size))
         vn_templ = VariableNetwork([self.n_objs, tmpl_size, tmpl_size, 1])
         template = vn_templ.forward(x)
         self.template = template

@@ -177,13 +177,13 @@ class VariableNetwork(Module):
     """Produces a variable from a vector of 1's and improves learning speed of contents and masks."""
     def __init__(self, shape):
         super().__init__()
-        var = torch.ones([1,10])
-        self.layer1 = nn.Linear(var, 200)
+        self.var = torch.ones([1,10])
+        self.layer1 = nn.Linear(self.var[0], 200)
         self.tanh = nn.Tanh()
         self.output = nn.Linear(200, np.prod(shape))
 
     def forward(self, x):
-        x = self.layer1(x)
+        x = self.layer1(self.var)
         x = self.tanh(x)
         output = self.output(x)
         return output
