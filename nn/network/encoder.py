@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 #from nn.network.blocks import unet, shallow_unet, variable_from_network
-from nn.network.blocks import UNet, variable_from_network
+from nn.network.blocks import UNet, VariableNetwork
 from nn.utils.misc import log_metrics
 from nn.utils.viz import gallery, gif
 from nn.utils.math import sigmoid
