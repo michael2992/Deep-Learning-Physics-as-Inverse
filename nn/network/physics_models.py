@@ -68,8 +68,8 @@ class PhysicsNet(BaseNet):
         self.conv_ch = 3 if color else 1
         self.input_size = input_size
 
-        self.conv_input_shape = [int(np.sqrt(input_size))]*2+[self.conv_ch]
-        self.input_shape = [int(np.sqrt(input_size))]*2+[self.conv_ch]
+        self.conv_input_shape = [self.conv_ch]+[int(np.sqrt(input_size))]*2
+        self.input_shape = [self.conv_ch]+[int(np.sqrt(input_size))]*2
 
         
         
@@ -136,8 +136,9 @@ class PhysicsNet(BaseNet):
         return train_loss, eval_losses
 
     def feedforward(self, x):
-        x = torch.stack([torch.tensor(value, dtype=torch.float32) for value in x.values()], dim=0)
-        self.input = x
+        x = torch.stack([torch.tensor(value, dtype=torch.float32) for value in x.values()], dim=0)[0]
+        self.input = x.transpose(-1,1)
+        print("input shape", self.input.shape)
         self.output = self.conv_feedforward(self.input)
 
         self.train_loss, self.eval_losses = self.compute_loss()
@@ -167,15 +168,19 @@ class PhysicsNet(BaseNet):
         c0 = torch.zeros(self.lstm_layers, input_tensor.size(0), self.recurrent_units).to(input_tensor.device)
         
         # Reshape input tensor for encoding
-        
-        h = input_tensor[:, :self.input_steps+self.pred_steps].view(-1, *self.input_shape)
-    
+        print("input tensor shape",input_tensor.shape)
+        print("img, input shape", self.input_shape)
+        h = input_tensor[:, :,:,:,:self.input_steps+self.pred_steps].view(-1, *self.input_shape, self.input_steps+self.pred_steps)
+        print("input to the encoder shape",h.shape)
+        print("=============================")
         enc_pos = self.encoder(h)  # Assuming self.encoder is correctly defined and returns encoded positions
         print("encoder_output shape",enc_pos.shape)
+        # print(enc_pos[0][:5])
         # Decode the input and pred frames
         recons_out = self.decoder(enc_pos)  # Assuming self.decoder is correctly defined
         print("RECONS",recons_out.shape)
-        print(input_tensor.size(0), self.input_steps+self.pred_steps, *self.input_shape)
+        
+        print("Expected shape",input_tensor.size(0), self.input_steps+self.pred_steps, *self.input_shape)
         self.recons_out = recons_out.view(input_tensor.size(0), self.input_steps+self.pred_steps, *self.input_shape)
         self.enc_pos = enc_pos.view(input_tensor.size(0), self.input_steps+self.pred_steps, self.coord_units//2)
 

@@ -189,6 +189,6 @@ class VariableNetwork(Module):
         x = self.tanh(x)
         output = self.output(x)
         
-        output = torch.reshape(output, self.shape[:4])
+        output = torch.reshape(output, self.shape)
         
         return output

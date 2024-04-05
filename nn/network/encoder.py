@@ -24,16 +24,22 @@ class ConvEncoder(nn.Module):
 
 
     def forward(self, x):
-        print("Shape of x before transpose: {}".format(x.shape))
-        x = torch.transpose(x, -1, 1)
-        print("Shape of x after transpose: {}".format(x.shape))
+        # print("Shape of x before transpose: {}".format(x.shape))
+        # x = torch.transpose(x, -1, 1)
+        # print("Shape of x after transpose: {}".format(x.shape))
       
         self.input_shape = x.shape
         print("self.conv_shape: {}".format(self.conv_input_shape))
         h = x
         if self.conv_input_shape[0] < 40:
             shallow_unet = UNet(h, 8, self.n_objs, depth=3)
-            h = shallow_unet.forward(h)
+            h_out = []
+            for t in range(h.size(-1)):
+                current_h = h[:,:,:,:,t]
+                next_h = shallow_unet.forward(current_h)
+                h_out.append(next_h)
+            
+            h = torch.stack(h_out, dim=-1)
 
             # Add learnable bg mask
             print("Shape of h before adding learnable bg mask: {}".format(h.shape)) # (batch, channels, h, w)
@@ -48,13 +54,13 @@ class ConvEncoder(nn.Module):
             self.enc_masks = h
             self.masked_objs = [self.enc_masks[:,i:i+1,:,:]*x for i in range(self.n_objs)]
             print("Shape after masked objs: {}".format(len(self.masked_objs)))
-            h = torch.cat(self.masked_objs, axis=0)
+            h = torch.cat(self.masked_objs, axis=1)
             print("Shape after cat masked: {}".format(h.shape))
             # Produce x,y-coordinates (this part appears to be different from the paper description)
             print("Shape of h before reshaping: {}".format(h.shape))
-            print(self.conv_input_shape[0], self.conv_ch,self.conv_input_shape[0]*self.conv_input_shape[0]*self.conv_ch )
-            h = torch.reshape(h, [h.shape[0], self.conv_input_shape[0]*self.conv_input_shape[0]*self.conv_ch]) 
-            print("Shape of h after reshaping: {}".format(h.shape)) 
+            # print([h.shape[0], self.conv_input_shape[1]*self.conv_input_shape[2]*self.conv_ch])
+            # h = torch.reshape(h, [h.shape[0], self.conv_input_shape[1]*self.conv_input_shape[2]*self.conv_ch,h.shape[-1] ]) 
+            # print("Shape of h after reshaping: {}".format(h.shape)) 
         else:
             unet = UNet(h, 16, self.n_objs) # base_channels = 16 in original code but was 8 in our version?
             h = unet.forward(h)
@@ -70,10 +76,37 @@ class ConvEncoder(nn.Module):
             h = torch.flatten(h)
         print("Before location network",h.shape)
         # Pass through 2-layer location network
-        location_net = LocationNetwork(h.shape[1])
-        h = location_net.forward(h)
+        location_net = LocationNetwork(input=6*32*32, n_objs=self.n_objs)  # Adjust 'input' based on the flattening of [6, 32, 32]
+
+        output_h = []
+
+        for batch_idx in range(h.shape[0]):  # Looping over batch
+            temp_outputs = []
+            for temp_idx in range(h.shape[-1]):  # Looping over temporal steps
+                # Selecting the [6, 32, 32] image for the current batch and temporal index
+                img = h[batch_idx, :, :, :, temp_idx]
+                
+                # Flatten the img to match LocationNetwork's input shape
+                img_flat = img.reshape(-1)  # Flatten the image
+                img_flat = img_flat.unsqueeze(0)  # Adding a batch dimension for compatibility with nn.Module
+                
+                # Apply the location network
+                loc_output = location_net(img_flat).reshape(-1,self.n_objs, 2)
+                
+                # Store the output
+                temp_outputs.append(loc_output)
+
+            # Combine temporal outputs for the current batch item
+            output_h.append(torch.stack(temp_outputs, dim=0))
+
+        # Combine all batch outputs to form the new 'h'
+        h = torch.stack(output_h, dim=0)
         print("h after location network: {}".format(h.shape))
-        h = torch.cat(torch.split(h, self.n_objs, 0), axis=1)
+
+        
+        # h = location_net.forward(h)
+        print("h after location network: {}".format(h.shape))
+        h = torch.cat(torch.split(h, self.n_objs, 1), dim=1)
         print("Shape of g after split and concat: {}".format(h.shape))
 
         # Pass through tanh activation layer to get output
@@ -87,7 +120,7 @@ class ConvEncoder(nn.Module):
         #cell = self.cell(self.recurrent_units)
         #c, h = cell(h)
         # h_reshaped = h.view(360, 2, 2)
-        return h
+        return h.squeeze(2)
 
 class ConvDecoder(nn.Module):
     def __init__(self, inp, n_objs, conv_input_shape, conv_ch, alt_vel=False):
@@ -97,68 +130,90 @@ class ConvDecoder(nn.Module):
         self.conv_input_shape = conv_input_shape
         self.conv_ch = conv_ch
         self.alt_vel = alt_vel
+        self.tmpl_size = self.conv_input_shape[1] // 2
         self.logsigma = torch.nn.Parameter(torch.log(torch.tensor(1.0, dtype=torch.float32)))
 
          # Initialize your VariableNetworks here, assuming they are defined elsewhere
-        self.vn_templ = VariableNetwork([self.n_objs, 1, self.conv_input_shape[0]//2, self.conv_input_shape[0]//2])
-        self.vn_cont = VariableNetwork([self.n_objs, self.conv_ch, self.conv_input_shape[0]//2, self.conv_input_shape[0]//2])
-        self.stn = SpatialTransformer(self.conv_input_shape[:2])
-        self.vn_background = VariableNetwork([1, 1, *self.conv_input_shape])  # Adjusted based on assumed input shape
+        self.vn_templ = VariableNetwork([self.n_objs,  self.conv_ch, self.tmpl_size,self.tmpl_size])
+        self.vn_cont = VariableNetwork([self.n_objs, 1, self.tmpl_size, self.tmpl_size])
+        self.stn = SpatialTransformer(self.conv_input_shape[1:])
+        self.vn_background = VariableNetwork([1, *self.conv_input_shape])  # Adjusted based on assumed input shape
 
          
     def forward(self, x):
         print("X_shape", x.shape)
-        batch_size = x.shape[0]
-        tmpl_size = self.conv_input_shape[0]//2
+        batch_size, temporal, n_objs, coordinates = x.shape  # Updated shape
+        tmpl_size = self.tmpl_size
 
-        sigma = torch.exp(self.logsigma).unsqueeze(0).expand(batch_size, -1)
-        nill = torch.zeros(batch_size, 1, device=x.device)
-        template = self.vn_templ(x)
+        sigma = torch.exp(self.logsigma).expand(batch_size)
+        nill = torch.zeros_like(sigma)
+
+        template = self.vn_templ.forward(x)
         self.template = template
-        template = template.repeat(1, 3, 1, 1) + 5
+        template = torch.tile(template, [1,3,1,1])+5
 
-        contents = torch.sigmoid(self.vn_cont(x))
+        contents = torch.sigmoid(self.vn_cont.forward(x))
         self.contents = contents
-        joint = torch.cat([template, contents], dim=1)
 
-        out_temp_cont = []
+
+        print(template.shape, contents.shape)
+        joint = torch.cat([template, contents], axis=1)
+        print("join_shape", joint.shape)
         for loc, join in zip(torch.split(x, self.n_objs, -1), torch.split(joint, self.n_objs, 0)):
-            loc_x = loc[:, 0].unsqueeze(1)
-            loc_y = loc[:, 1].unsqueeze(1)
-            
-            # Prepare components of theta ensuring they have correct shapes for stacking
-            theta0 = sigma
-            theta1 = nill
-            theta2 = ((self.conv_input_shape[0] / 2 - loc_x) / tmpl_size * sigma)
-            theta3 = nill
-            theta4 = sigma
-            theta5 = ((self.conv_input_shape[0] / 2 - loc_y) / tmpl_size * sigma)
-            
-            # Concatenate along the last dimension to form [batch_size, 2, 3] tensors
-            theta = torch.cat([theta0, theta1, theta2, theta3, theta4, theta5], dim=-1).view(batch_size, 2, 3)
-    
-            # Assuming join needs to be the same shape as input images
-            out_join = self.stn(join.repeat(1, 1, 1, 1), theta)  # Adjust join.repeat(...) as necessary
-            out_temp_cont.append(out_join)  # May need adjustment based on what out_join represents
-       
+            print(loc.shape)
+            out_temp_cont = []
+            for t in range(temporal):
+                theta_list = []
+                for obj in range(n_objs):
+                    loc_x = loc[:,t,obj,0]
+                    loc_y = loc[:,t,obj,1]
+                    # print("loc_x shape",loc_x.shape)
+                    # print("sigma shape", sigma.shape)
+                    theta2 = ((self.conv_input_shape[1] / 2 - loc_x) / tmpl_size * sigma)
+                    theta5 = ((self.conv_input_shape[1] / 2 - loc_y) / tmpl_size * sigma)
+                    # print("Shapes",theta2.shape, theta5.shape, sigma.shape, nill.shape)
+
+                    theta = torch.cat([sigma, nill, theta2, nill, sigma, theta5], dim=-1).view(batch_size,2,3)
+                    theta_list.append(theta)
+
+                fin_theta = torch.cat(theta_list, dim=0)
+                print("fin_ThetA", fin_theta.shape)
+                print("join shape", join.shape)
+                print("tiled", torch.tile(join, [batch_size,1,1,1]).shape)
+                out_join = self.stn.forward(torch.tile(join, [batch_size,1,1,1]), fin_theta) 
+                print("out_join", out_join.shape)
+                out_temp_cont.append(out_join)
+                
+
+        out_temp_cont = torch.stack(out_temp_cont, dim=1)  # Stack along the temporal dimension
+
+        print("out_temp shape",out_temp_cont.shape)
         
-        background_content = torch.sigmoid(self.vn_background(x))
-        background_content = background_content.repeat(batch_size, 1, 1, 1)
+        self.background_content = torch.nn.functional.sigmoid(self.vn_background.forward(x))
+        background_content = torch.tile(self.background_content, [batch_size, 1, 1, 1])
+        contents = [p[1] for p in out_temp_cont]
+        contents.append(background_content)
+        self.transf_contents = contents
+
         
-        # Assuming out_temp_cont has tensors of shape [batch_size, C, H, W]
-        # and background_content is [batch_size, C, H, W] after repeat
-        self.transf_contents = torch.cat([*out_temp_cont, background_content], dim=1)
+        background_mask = torch.ones_like(out_temp_cont[0][0])
+        masks = torch.stack([p[0]-5 for p in out_temp_cont], axis=-1)
+        masks = torch.nn.functional.softmax(masks, dim=-1)
+        masks = torch.unbind(masks, axis=-1)
+        self.transf_masks = masks
 
-        # Assuming masks are created/available with shape [batch_size, 1, H, W]
-        # and need to be expanded to match the 'C' dimension of contents
-        masks = [torch.ones_like(content) for content in self.transf_contents.split(1, dim=1)]
 
-        # Adjusting masks to match content dimensions if necessary
-        adjusted_masks = [mask.expand_as(content) for mask, content in zip(masks, self.transf_contents.split(1, dim=1))]
+        print(len(masks), len(masks[0]), len(masks[0][0]), len(masks[0][0][0]) )
+        # out = torch.sum(torch.stack([m * c for m, c in zip(masks, contents)]),dim=0)
+        mult_lst = []
+        for m, c in zip(masks, contents):
+            mult = m * c  # Element-wise multiplication
+            mult_lst.append(mult)
 
-        # Applying masks to each content tensor and summing the results
-        out = torch.sum(torch.stack([mask * content for mask, content in zip(adjusted_masks, self.transf_contents.split(1, dim=1))]), dim=0)
-
+        # Convert list of tensors to a single tensor before summing
+        out = torch.sum(torch.stack(mult_lst), dim=1)
+                
+        print("decoder_out", out.shape)
         return out
 
 class VelEncoder(nn.Module):
@@ -189,12 +244,12 @@ class VelEncoder(nn.Module):
 
 class LocationNetwork(nn.Module):
         """The 2-layer location network described in the paper.""" 
-        def __init__(self, input):
+        def __init__(self, input, n_objs):
             super().__init__()
             self.layer1 = nn.Linear(input, 200)
             self.relu = nn.ReLU()
             self.layer2 = nn.Linear(200, 200)
-            self.output = nn.Linear(200, 2)
+            self.output = nn.Linear(200, 2*n_objs)
 
         def forward(self, x):
             x = self.layer1(x)
