@@ -162,15 +162,20 @@ class PhysicsNet(BaseNet):
 
     def conv_feedforward(self, input_tensor):
         # Initialize LSTM states
+        print(input_tensor.shape)
         h0 = torch.zeros(self.lstm_layers, input_tensor.size(0), self.recurrent_units).to(input_tensor.device)
         c0 = torch.zeros(self.lstm_layers, input_tensor.size(0), self.recurrent_units).to(input_tensor.device)
         
         # Reshape input tensor for encoding
+        
         h = input_tensor[:, :self.input_steps+self.pred_steps].view(-1, *self.input_shape)
+    
         enc_pos = self.encoder(h)  # Assuming self.encoder is correctly defined and returns encoded positions
-
+        print("encoder_output shape",enc_pos.shape)
         # Decode the input and pred frames
         recons_out = self.decoder(enc_pos)  # Assuming self.decoder is correctly defined
+        print("RECONS",recons_out.shape)
+        print(input_tensor.size(0), self.input_steps+self.pred_steps, *self.input_shape)
         self.recons_out = recons_out.view(input_tensor.size(0), self.input_steps+self.pred_steps, *self.input_shape)
         self.enc_pos = enc_pos.view(input_tensor.size(0), self.input_steps+self.pred_steps, self.coord_units//2)
 
