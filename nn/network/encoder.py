@@ -17,7 +17,7 @@ class ConvEncoder(nn.Module):
         self.input_channels = input_channels
         self.n_objs = n_objs
         self.conv_input_shape = conv_input_shape
-        #print("Conv input shape: {}".format(self.conv_input_shape))
+        print("Conv input shape: {}".format(self.conv_input_shape[0]))
         self.conv_ch = conv_ch
         self.alt_vel = alt_vel
 
@@ -44,6 +44,7 @@ class ConvEncoder(nn.Module):
             # Multiply input image with each mask
             self.enc_masks = h
             self.masked_objs = [self.enc_masks[:,i:i+1,:,:]*x for i in range(self.n_objs)]
+            print("Masked object shape: {}".format(len(self.masked_objs)))
             h = torch.cat(self.masked_objs, axis=0)
 
             # Produce x,y-coordinates (this part appears to be different from the paper description)
@@ -74,6 +75,7 @@ class ConvEncoder(nn.Module):
         # Pass through tanh activation layer to get output
         h = torch.tanh(h)*(self.conv_input_shape[0]/2) + (self.conv_input_shape[0]/2)
         print("Shape of h after encoding: {}".format(h.shape))
+        print("Content of h[0]: {}".format(h[0]))
 
         if self.alt_vel:
             vels = self.vel_encoder(x)
