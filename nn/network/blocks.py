@@ -187,6 +187,8 @@ class VariableNetwork(Module):
     def forward(self, x):
         x = self.layer1(self.var)
         x = self.tanh(x)
-        x = self.output(x)
-        output = torch.reshape(x, self.shape)
+        output = self.output(x)
+        
+        output = torch.reshape(output, self.shape)
+        
         return output
