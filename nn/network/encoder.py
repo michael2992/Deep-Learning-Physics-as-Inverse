@@ -141,11 +141,12 @@ class ConvDecoder(nn.Module):
 
          
     def forward(self, x):
+        print("\n======================\nDecoder\n")
         print("X_shape", x.shape)
         batch_size, temporal, n_objs, coordinates = x.shape  # Updated shape
         tmpl_size = self.tmpl_size
 
-        sigma = torch.exp(self.logsigma).expand(batch_size)
+        sigma = torch.exp(self.logsigma)
         nill = torch.zeros_like(sigma)
 
         template = self.vn_templ.forward(x)
@@ -159,33 +160,32 @@ class ConvDecoder(nn.Module):
         print(template.shape, contents.shape)
         joint = torch.cat([template, contents], axis=1)
         print("join_shape", joint.shape)
-        for loc, join in zip(torch.split(x, self.n_objs, -1), torch.split(joint, self.n_objs, 0)):
-            print(loc.shape)
-            out_temp_cont = []
-            for t in range(temporal):
-                theta_list = []
-                for obj in range(n_objs):
-                    loc_x = loc[:,t,obj,0]
-                    loc_y = loc[:,t,obj,1]
-                    # print("loc_x shape",loc_x.shape)
-                    # print("sigma shape", sigma.shape)
-                    theta2 = ((self.conv_input_shape[1] / 2 - loc_x) / tmpl_size * sigma)
-                    theta5 = ((self.conv_input_shape[1] / 2 - loc_y) / tmpl_size * sigma)
-                    # print("Shapes",theta2.shape, theta5.shape, sigma.shape, nill.shape)
+        
+        out_temp_cont = []
+        theta_lst = []
+        
+        # for loc, join in zip(torch.split(x,self.n_objs, 1), torch.split(joint, self.n_objs, 0)):
+        join = torch.split(joint, self.n_objs, 0)[0]
+        U = torch.tile(join, [1, 1,1,1])
 
-                    theta = torch.cat([sigma, nill, theta2, nill, sigma, theta5], dim=-1).view(batch_size,2,3)
-                    theta_list.append(theta)
+        output_size = [2, temporal, self.conv_input_shape[1],self.conv_input_shape[1]]
 
-                fin_theta = torch.cat(theta_list, dim=0)
-                print("fin_ThetA", fin_theta.shape)
-                print("join shape", join.shape)
-                print("tiled", torch.tile(join, [batch_size,1,1,1]).shape)
-                out_join = self.stn.forward(torch.tile(join, [batch_size,1,1,1]), fin_theta) 
+        for b_idx in range(batch_size):
+            for temp_idx in range(temporal):
+                theta_img = []
+                for obj_idx in range(n_objs):
+                    theta2 = (self.conv_input_shape[0]/2-x[b_idx, temp_idx, obj_idx,0])/tmpl_size*sigma
+                    theta5 = (self.conv_input_shape[0]/2-x[b_idx, temp_idx, obj_idx,1])/tmpl_size*sigma
+
+                    theta = torch.stack([sigma, nill, theta2, nill, sigma, theta5], axis=0).view(2,3)
+                               
+                    theta_img.append(theta)
+
+                out_join = self.stn.forward(U, torch.stack(theta_img))
                 print("out_join", out_join.shape)
                 out_temp_cont.append(out_join)
                 
-
-        out_temp_cont = torch.stack(out_temp_cont, dim=1)  # Stack along the temporal dimension
+        out_temp_cont = torch.stack(out_temp_cont, dim=0)  # Stack along the temporal dimension
 
         print("out_temp shape",out_temp_cont.shape)
         
@@ -203,7 +203,7 @@ class ConvDecoder(nn.Module):
         self.transf_masks = masks
 
 
-        print(len(masks), len(masks[0]), len(masks[0][0]), len(masks[0][0][0]) )
+        # print(len(masks), len(masks[0]), len(masks[0][0]), len(masks[0][0][0]) )
         # out = torch.sum(torch.stack([m * c for m, c in zip(masks, contents)]),dim=0)
         mult_lst = []
         for m, c in zip(masks, contents):
@@ -233,7 +233,7 @@ class VelEncoder(nn.Module):
 
     def forward(self, x):
         x = torch.split(x, self.n_objs, 2)
-        x - torch.cat(x, dim=0)
+        x = torch.cat(x, dim=0)
         x = torch.reshape(x, [x.shape[0], self.input_steps*self.coord_units//self.n_objs//2])
         x = self.layer1(x)
         x  = self.tanh(x)
