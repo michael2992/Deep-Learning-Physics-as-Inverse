@@ -18,7 +18,7 @@ encoder_type = "conv_encoder"
 decoder_type = "conv_st_decoder"
 autoencoder_loss = 0.0
 alt_vel = False
-color = True
+color = False
 datapoints = 0
 
 base_lr = 3e-4 

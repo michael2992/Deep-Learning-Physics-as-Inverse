@@ -170,7 +170,7 @@ class PhysicsNet(BaseNet):
         # Reshape input tensor for encoding
         print("input tensor shape",input_tensor.shape)
         print("img, input shape", self.input_shape)
-        h = input_tensor[:, :,:,:,:self.input_steps+self.pred_steps].view(-1, *self.input_shape, self.input_steps+self.pred_steps)
+        h = input_tensor[:, :,:,:,:self.input_steps+self.pred_steps]
         print("input to the encoder shape",h.shape)
         print("=============================")
         enc_pos = self.encoder(h)  # Assuming self.encoder is correctly defined and returns encoded positions
@@ -183,8 +183,9 @@ class PhysicsNet(BaseNet):
         print("Expected shape",input_tensor.size(0), self.input_steps+self.pred_steps, *self.input_shape)
         self.recons_out = recons_out.view(input_tensor.size(0), self.input_steps+self.pred_steps, *self.input_shape)
         self.enc_pos = enc_pos.view(input_tensor.size(0), self.input_steps+self.pred_steps, self.coord_units//2)
-
+        
         if self.input_steps > 1:
+            print()
             vel = self.vel_encoder(self.enc_pos[:, :self.input_steps])  # Assuming self.vel_encoder is correctly defined
         else:
             vel = torch.zeros(input_tensor.size(0), self.coord_units//2).to(input_tensor.device)
