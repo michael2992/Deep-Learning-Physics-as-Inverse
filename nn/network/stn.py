@@ -18,7 +18,7 @@ class SpatialTransformer(nn.Module):
         # Correcting the affine_grid call:
         # The size parameter should describe the output tensor size as [N, C, H, W]
         output_size = [num_batch, num_channels, self.out_height, self.out_width]
-        print(theta.shape, output_size)
+        #print(theta.shape, output_size)
         
         # Generating the affine grid
         grid = F.affine_grid(theta, output_size, align_corners=False)

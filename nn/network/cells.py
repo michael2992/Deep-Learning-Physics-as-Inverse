@@ -27,6 +27,8 @@ class BouncingODECell(ODECell):
     def forward(self, poss, vels):
         poss = torch.split(poss, 2, 1)
         vels = torch.split(vels, 2, 1)
+        poss = list(poss)
+        vels = list(vels)
         for i in range(5):
             poss[0] = poss[0] + self.dt/5 * vels[0]
             poss[1] = poss[1] + self.dt/5 * vels[1]

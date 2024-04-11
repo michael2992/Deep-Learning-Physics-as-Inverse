@@ -18,18 +18,18 @@ class ConvEncoder(nn.Module):
         self.input_channels = input_channels
         self.n_objs = n_objs
         self.conv_input_shape = conv_input_shape
-        print("Conv input shape: {}".format(self.conv_input_shape))
+        #print("Conv input shape: {}".format(self.conv_input_shape))
         self.conv_ch = conv_ch
         self.alt_vel = alt_vel
 
 
     def forward(self, x):
-        # print("Shape of x before transpose: {}".format(x.shape))
+        # #print("Shape of x before transpose: {}".format(x.shape))
         # x = torch.transpose(x, -1, 1)
-        # print("Shape of x after transpose: {}".format(x.shape))
+        # #print("Shape of x after transpose: {}".format(x.shape))
       
         self.input_shape = x.shape
-        print("self.conv_shape: {}".format(self.conv_input_shape))
+        #print("self.conv_shape: {}".format(self.conv_input_shape))
         h = x
         if self.conv_input_shape[0] < 40:
             shallow_unet = UNet(h, 8, self.n_objs, depth=3)
@@ -42,25 +42,25 @@ class ConvEncoder(nn.Module):
             h = torch.stack(h_out, dim=-1)
 
             # Add learnable bg mask
-            print("Shape of h before adding learnable bg mask: {}".format(h.shape)) # (batch, channels, h, w)
+            #print("Shape of h before adding learnable bg mask: {}".format(h.shape)) # (batch, channels, h, w)
             h = torch.cat([h, torch.ones_like(h[:,:1,:,:])], axis=1)
-            print("Shape of h after adding learnable bg mask: {}".format(h.shape)) # Should be (batch, channels+1, h, w) 
+            #print("Shape of h after adding learnable bg mask: {}".format(h.shape)) # Should be (batch, channels+1, h, w) 
 
             # Pass through softmax
 
             h = torch.nn.functional.softmax(h, dim=1)
-            print("Shape after softmax: {}".format(h.shape))
+            #print("Shape after softmax: {}".format(h.shape))
             # Multiply input image with each mask
             self.enc_masks = h
             self.masked_objs = [self.enc_masks[:,i:i+1,:,:]*x for i in range(self.n_objs)]
-            print("Shape after masked objs: {}".format(len(self.masked_objs)))
+            #print("Shape after masked objs: {}".format(len(self.masked_objs)))
             h = torch.cat(self.masked_objs, axis=1)
-            print("Shape after cat masked: {}".format(h.shape))
+            #print("Shape after cat masked: {}".format(h.shape))
             # Produce x,y-coordinates (this part appears to be different from the paper description)
-            print("Shape of h before reshaping: {}".format(h.shape))
-            # print([h.shape[0], self.conv_input_shape[1]*self.conv_input_shape[2]*self.conv_ch])
+            #print("Shape of h before reshaping: {}".format(h.shape))
+            # #print([h.shape[0], self.conv_input_shape[1]*self.conv_input_shape[2]*self.conv_ch])
             # h = torch.reshape(h, [h.shape[0], self.conv_input_shape[1]*self.conv_input_shape[2]*self.conv_ch,h.shape[-1] ]) 
-            # print("Shape of h after reshaping: {}".format(h.shape)) 
+            # #print("Shape of h after reshaping: {}".format(h.shape)) 
         else:
             unet = UNet(h, 16, self.n_objs) # base_channels = 16 in original code but was 8 in our version?
             h = unet.forward(h)
@@ -74,7 +74,7 @@ class ConvEncoder(nn.Module):
             # Pass through average pooling2d layer (not mentioned in the paper) and flatten
             h = torch.nn.functional.avg_pool2d(h, 2, 2)
             h = torch.flatten(h)
-        print("Before location network",h.shape)
+        #print("Before location network",h.shape)
         # Pass through 2-layer location network
         location_net = LocationNetwork(input=6*32*32, n_objs=self.n_objs)  # Adjust 'input' based on the flattening of [6, 32, 32]
 
@@ -101,17 +101,17 @@ class ConvEncoder(nn.Module):
 
         # Combine all batch outputs to form the new 'h'
         h = torch.stack(output_h, dim=0)
-        print("h after location network: {}".format(h.shape))
+        #print("h after location network: {}".format(h.shape))
 
         
         # h = location_net.forward(h)
-        print("h after location network: {}".format(h.shape))
+        #print("h after location network: {}".format(h.shape))
         h = torch.cat(torch.split(h, self.n_objs, 1), dim=1)
-        print("Shape of g after split and concat: {}".format(h.shape))
+        #print("Shape of g after split and concat: {}".format(h.shape))
 
         # Pass through tanh activation layer to get output
         h = torch.tanh(h)*(self.conv_input_shape[0]/2) + (self.conv_input_shape[0]/2)
-        print("Shape of h after encoding: {}".format(h.shape))
+        #print("Shape of h after encoding: {}".format(h.shape))
         if self.alt_vel:
             vels = self.vel_encoder(x)
             h = torch.cat([h, vels], axis=1)
@@ -141,9 +141,11 @@ class ConvDecoder(nn.Module):
 
          
     def forward(self, x):
-        print("\n======================\nDecoder\n")
-        print("X_shape", x.shape)
+        #print("\n======================\nDecoder\n")
+        #print("X_shape", x.shape)
+        print("Shape of x in decoder ", x.shape)
         batch_size, temporal, n_objs, coordinates = x.shape  # Updated shape
+        #coordinates, n_objs = x.shape
         tmpl_size = self.tmpl_size
 
         sigma = torch.exp(self.logsigma)
@@ -157,9 +159,9 @@ class ConvDecoder(nn.Module):
         self.contents = contents
 
 
-        print(template.shape, contents.shape)
+        #print(template.shape, contents.shape)
         joint = torch.cat([template, contents], axis=1)
-        print("join_shape", joint.shape)
+        #print("join_shape", joint.shape)
         
         out_temp_cont = []
         theta_lst = []
@@ -182,12 +184,12 @@ class ConvDecoder(nn.Module):
                     theta_img.append(theta)
 
                 out_join = self.stn.forward(U, torch.stack(theta_img))
-                print("out_join", out_join.shape)
+                ##print("out_join", out_join.shape)
                 out_temp_cont.append(out_join)
                 
         out_temp_cont = torch.stack(out_temp_cont, dim=0)  # Stack along the temporal dimension
 
-        print("out_temp shape",out_temp_cont.shape)
+        ##print("out_temp shape",out_temp_cont.shape)
         
         self.background_content = torch.nn.functional.sigmoid(self.vn_background.forward(x))
         background_content = torch.tile(self.background_content, [batch_size, 1, 1, 1])
@@ -203,7 +205,7 @@ class ConvDecoder(nn.Module):
         self.transf_masks = masks
 
 
-        # print(len(masks), len(masks[0]), len(masks[0][0]), len(masks[0][0][0]) )
+        # #print(len(masks), len(masks[0]), len(masks[0][0]), len(masks[0][0][0]) )
         # out = torch.sum(torch.stack([m * c for m, c in zip(masks, contents)]),dim=0)
         mult_lst = []
         for m, c in zip(masks, contents):
@@ -213,7 +215,7 @@ class ConvDecoder(nn.Module):
         # Convert list of tensors to a single tensor before summing
         out = torch.sum(torch.stack(mult_lst), dim=1)
                 
-        print("decoder_out", out.shape)
+        ##print("decoder_out", out.shape)
         return out
 
 class VelEncoder(nn.Module):
@@ -226,15 +228,17 @@ class VelEncoder(nn.Module):
         self.coord_units = coord_units
         self.input_steps = input_steps
 
-        self.layer1 = nn.Linear(self.input_channels, 100)
+        self.layer1 = nn.Linear(self.input_steps*self.coord_units//self.n_objs//2, 100) 
         self.tanh = nn.Tanh()
         self.layer2 = nn.Linear(100, 100)
         self.output = nn.Linear(100, self.coord_units//self.n_objs//2)
 
     def forward(self, x):
         x = torch.split(x, self.n_objs, 2)
+        print("Shape after split: ", len(x))
         x = torch.cat(x, dim=0)
         x = torch.reshape(x, [x.shape[0], self.input_steps*self.coord_units//self.n_objs//2])
+        print("Shape of x in velencoder before going through layer 1, ", x.shape)
         x = self.layer1(x)
         x  = self.tanh(x)
         x = self.layer2(x)

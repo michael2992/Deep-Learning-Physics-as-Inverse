@@ -98,6 +98,9 @@ class PhysicsNet(BaseNet):
         self.conv_decoder = ConvDecoder(self.input_shape, self.n_objs, self.conv_input_shape, self.conv_ch, self.alt_vel).forward
 
         self.lstms = nn.LSTM(input_size=self.recurrent_units, hidden_size=self.recurrent_units, num_layers=self.lstm_layers)
+
+        self.cell_type = cell_type
+        self.cell = CELLS[self.cell_type]
         
         self.encoder = self.conv_encoder
         # {name: method for name, method in \
@@ -115,7 +118,11 @@ class PhysicsNet(BaseNet):
         return feed_dict, (batch_x, None)
 
     def compute_loss(self):
-        recons_target = self.input[:, :self.input_steps+self.pred_steps]
+        print("Input shape: ", self.input.shape)
+        recons_target = self.input[:, :self.input_steps+self.pred_steps] 
+        #recons_target = recons_target.permute(0, 1, 4, 2, 3)
+        print("Shape of recons target: ", recons_target.shape)
+        print("Shape of recons out: ", self.recons_out.shape)
         recons_loss = torch.square(recons_target - self.recons_out)
         recons_loss = torch.sum(recons_loss, dim=[2, 3, 4])
 
@@ -138,7 +145,7 @@ class PhysicsNet(BaseNet):
     def feedforward(self, x):
         x = torch.stack([torch.tensor(value, dtype=torch.float32) for value in x.values()], dim=0)[0]
         self.input = x.transpose(-1,1)
-        print("input shape", self.input.shape)
+        #print("input shape", self.input.shape)
         self.output = self.conv_feedforward(self.input)
 
         self.train_loss, self.eval_losses = self.compute_loss()
@@ -163,35 +170,47 @@ class PhysicsNet(BaseNet):
 
     def conv_feedforward(self, input_tensor):
         # Initialize LSTM states
-        print(input_tensor.shape)
+        #print(input_tensor.shape)
         h0 = torch.zeros(self.lstm_layers, input_tensor.size(0), self.recurrent_units).to(input_tensor.device)
         c0 = torch.zeros(self.lstm_layers, input_tensor.size(0), self.recurrent_units).to(input_tensor.device)
+        self.rollout_cell = self.cell(self.coord_units//2)
         
         # Reshape input tensor for encoding
-        print("input tensor shape",input_tensor.shape)
-        print("img, input shape", self.input_shape)
+        #print("input tensor shape",input_tensor.shape)
+        #print("img, input shape", self.input_shape)
         h = input_tensor[:, :,:,:,:self.input_steps+self.pred_steps]
-        print("input to the encoder shape",h.shape)
-        print("=============================")
+        print("Input tensor after expanding: ", h.shape)
+        #print("input to the encoder shape",h.shape)
+        #print("=============================")
         enc_pos = self.encoder(h)  # Assuming self.encoder is correctly defined and returns encoded positions
-        print("encoder_output shape",enc_pos.shape)
-        # print(enc_pos[0][:5])
+        print("Shape after leaving encoder: ", enc_pos.shape)
+        #print(enc_pos[1])
+        temporals = enc_pos[1]
+        #print("encoder_output shape",enc_pos.shape)
+        # #print(enc_pos[0][:5])
         # Decode the input and pred frames
         recons_out = self.decoder(enc_pos)  # Assuming self.decoder is correctly defined
-        print("RECONS",recons_out.shape)
+        #print("RECONS",recons_out.shape)
         
-        print("Expected shape",input_tensor.size(0), self.input_steps+self.pred_steps, *self.input_shape)
+        print("Shape of recons out before reshaping: ", recons_out.shape)
+        #print("Expected shape",input_tensor.size(0), self.input_steps+self.pred_steps, *self.input_shape)
         self.recons_out = recons_out.view(input_tensor.size(0), self.input_steps+self.pred_steps, *self.input_shape)
+        print("Expected shape (= shape of recons out): ", self.recons_out.shape)
         self.enc_pos = enc_pos.view(input_tensor.size(0), self.input_steps+self.pred_steps, self.coord_units//2)
         
         if self.input_steps > 1:
-            print()
+            print("Shape that enters vel encoder: ", self.enc_pos[:, :self.input_steps].shape)
             vel = self.vel_encoder(self.enc_pos[:, :self.input_steps])  # Assuming self.vel_encoder is correctly defined
+            print("Shape after leaving velencoder: ", vel.shape)
         else:
             vel = torch.zeros(input_tensor.size(0), self.coord_units//2).to(input_tensor.device)
 
         pos = self.enc_pos[:, self.input_steps-1]
         output_seq = []
+        print("shape of pos: ", pos.shape)
+        #pos = torch.reshape(pos, vel.shape)
+        vel = torch.reshape(vel, pos.shape) #if this does not work, try reshaping pos instead
+        print("shape of vel: ", vel.shape)
         pos_vel_seq = [torch.cat([pos, vel], dim=1)]
 
         # Rollout ODE and decoder
@@ -200,12 +219,26 @@ class PhysicsNet(BaseNet):
             pos, vel = self.rollout_cell.forward(pos, vel)  # Assuming rollout_cell is correctly defined
 
             # Decode
-            out = self.decoder(pos)
+            
+            pos = pos.view(pos.shape[0], pos.shape[1]//2, pos.shape[1]//2)
+            pos = torch.unsqueeze(pos, dim=1)
+            for i in range(temporals.shape[0]-1):
+                pos = torch.cat([pos, torch.ones_like(pos[:,:1,:,:])], axis=1)
+            #h = torch.cat([h, torch.ones_like(h[:,:i:i+1,:,:] for i in range(9))], axis=1)
+            print("Shape of pos before going into decoder ", pos.shape)
+            out = self.decoder(pos) 
+            print("Shape of out after decoder: ", out.shape)
 
+            pos = torch.squeeze(pos[:, :1, :, :], dim=1)
+            pos = pos.view(vel.shape)
+
+            print("Pos shape after decoder: ", pos.shape)
+            print("Vel shape after decoder: ", vel.shape)
             pos_vel_seq.append(torch.cat([pos, vel], dim=1))
             output_seq.append(out)
 
         output_seq = torch.stack(output_seq)
+        print("Shape after conv feedforward: ", output_seq.shape)
 
     def visualize_sequence(self):
         batch_size = 5
