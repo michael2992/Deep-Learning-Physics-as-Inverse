@@ -4,7 +4,7 @@ import shutil
 import logging
 import numpy as np
 import torch  # Change import statement
-
+import torch.nn as nn
 from nn.utils.misc import log_metrics, zipdir
 
 logger = logging.getLogger("torch")  # Change logger name
@@ -19,9 +19,10 @@ OPTIMIZERS = {
 }
 
 
-class BaseNet:
+class BaseNet(nn.Module):
 
     def __init__(self):
+        super(BaseNet, self).__init__()
         self.train_metrics = {}
         self.eval_metrics = {}
 
@@ -42,7 +43,7 @@ class BaseNet:
         for fn, args, kwargs in extra_fns:
             fn(*args, **kwargs)
 
-    def feedforward(self):
+    def feedforward(self, inputs):
         raise NotImplementedError
 
     def compute_loss(self):
@@ -176,6 +177,7 @@ class BaseNet:
             if eval_iterator.X.shape[0] < 100:
                 batch_size = eval_iterator.X.shape[0]
             inputs, targets = self.get_batch(batch_size, eval_iterator)
+            #print("inputs for feedforward: {}".format(inputs.shape))
             outputs = self.feedforward(inputs)
             results = {k: metric(outputs, targets).item() for k, metric in self.eval_metrics.items()}
 

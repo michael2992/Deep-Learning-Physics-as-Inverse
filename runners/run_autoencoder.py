@@ -18,7 +18,7 @@ encoder_type = "conv_encoder"
 decoder_type = "conv_st_decoder"
 autoencoder_loss = 0.0
 alt_vel = False
-color = False
+color = True
 datapoints = 0
 
 base_lr = 3e-4 
@@ -66,8 +66,8 @@ data_file, test_data_file, cell_type, seq_len, test_seq_len, input_steps, pred_s
 def main():
     network = Model(task, recurrent_units, lstm_layers, cell_type, 
                         seq_len, input_steps, pred_steps,
-                       autoencoder_loss, alt_vel, color, 
-                       input_size, encoder_type, decoder_type)
+                        autoencoder_loss, alt_vel, color, 
+                        input_size, encoder_type, decoder_type)
     
     network.build_optimizer(base_lr, optimizer, anneal_lr)
     network.initialize_graph(save_dir, use_ckpt, ckpt_dir)
@@ -78,11 +78,13 @@ def main():
                                   "../data/datasets/%s"%data_file), conv=True, datapoints=datapoints)
     
     network.get_data(data_iterators)
-    
-    network.train(epochs, batch_size, save_every_n_epochs, eval_every_n_epochs,
-                 print_interval, debug)
+    network.input = network
+    print(network.calc_autoencoder_loss())
         
     torch.cuda.empty_cache()
 
 if __name__ == "__main__":
     main()
+
+
+
