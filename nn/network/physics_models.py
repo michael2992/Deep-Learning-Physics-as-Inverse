@@ -85,7 +85,7 @@ class PhysicsNet(BaseNet):
         self.extrap_steps = self.seq_len-self.input_steps-self.pred_steps
 
         self.alt_vel = alt_vel
-        self.autoencoder_loss = autoencoder_loss
+        self.autoencoder_loss_ = autoencoder_loss
 
         self.coord_units = COORD_UNITS[self.task]
         self.n_objs = self.coord_units//4
@@ -136,11 +136,22 @@ class PhysicsNet(BaseNet):
         self.extrap_loss = torch.mean(loss[:, self.pred_steps:])
 
         train_loss = self.pred_loss
-        if self.autoencoder_loss > 0.0:
-            train_loss += self.autoencoder_loss * self.recons_loss
+        if self.autoencoder_loss_ > 0.0:
+            train_loss += self.autoencoder_loss_ * self.recons_loss
 
         eval_losses = [self.pred_loss, self.extrap_loss, self.recons_loss]
         return train_loss, eval_losses
+    
+    def calc_autoencoder_loss(self):
+        recons_target = self.input
+        #recons_target = recons_target.permute(0, 1, 4, 2, 3)
+        #print("Shape of recons target: ", recons_target.shape)
+        #print("Shape of recons out: ", self.recons_out.shape)
+        recons_out = self.decoder(self.encoder(self.input))
+        recons_loss = torch.square(recons_target - recons_out)
+        recons_loss = torch.sum(recons_loss, dim=[2, 3, 4])
+        return recons_loss
+
 
     def feedforward(self, x):
         x = torch.stack([torch.tensor(value, dtype=torch.float32) for value in x.values()], dim=0)[0]
