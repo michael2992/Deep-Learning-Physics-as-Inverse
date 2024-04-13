@@ -29,9 +29,11 @@ class ConvEncoder(nn.Module):
         # #print("Shape of x after transpose: {}".format(x.shape))
       
         self.input_shape = x.shape
+        #print(x.shape)
         #print("self.conv_shape: {}".format(self.conv_input_shape))
         h = x
         if self.conv_input_shape[0] < 40:
+            #print('<40')
             shallow_unet = UNet(h, 8, self.n_objs, depth=3)
             h_out = []
             for t in range(h.size(-1)):
@@ -40,6 +42,7 @@ class ConvEncoder(nn.Module):
                 h_out.append(next_h)
             
             h = torch.stack(h_out, dim=-1)
+            #print('after u net ', h.shape)
 
             # Add learnable bg mask
             #print("Shape of h before adding learnable bg mask: {}".format(h.shape)) # (batch, channels, h, w)
@@ -64,6 +67,8 @@ class ConvEncoder(nn.Module):
         else:
             unet = UNet(h, 16, self.n_objs) # base_channels = 16 in original code but was 8 in our version?
             h = unet.forward(h)
+            #print('>40')
+            #print(h.shape)
             h = torch.cat([h, torch.ones_like(h[:,:1,:,:])], axis=1)
             h = torch.nn.functional.softmax(h, dim=1)
 
@@ -133,8 +138,8 @@ class ConvDecoder(nn.Module):
         self.tmpl_size = self.conv_input_shape[1] // 2
         self.logsigma = torch.nn.Parameter(torch.log(torch.tensor(1.0, dtype=torch.float32)))
 
-         # Initialize your VariableNetworks here, assuming they are defined elsewhere
-        self.vn_templ = VariableNetwork([self.n_objs,  self.conv_ch, self.tmpl_size,self.tmpl_size])
+        # Initialize your VariableNetworks here, assuming they are defined elsewhere
+        self.vn_templ = VariableNetwork([self.n_objs,  self.conv_ch, self.tmpl_size, self.tmpl_size])
         self.vn_cont = VariableNetwork([self.n_objs, 1, self.tmpl_size, self.tmpl_size])
         self.stn = SpatialTransformer(self.conv_input_shape[1:])
         self.vn_background = VariableNetwork([1, *self.conv_input_shape])  # Adjusted based on assumed input shape
@@ -143,10 +148,11 @@ class ConvDecoder(nn.Module):
     def forward(self, x):
         #print("\n======================\nDecoder\n")
         #print("X_shape", x.shape)
-        print("Shape of x in decoder ", x.shape)
+        #print("Shape of x in decoder ", x.shape)
         batch_size, temporal, n_objs, coordinates = x.shape  # Updated shape
         #coordinates, n_objs = x.shape
         tmpl_size = self.tmpl_size
+        batch, frames, x_coord, y_coord = x.shape
 
         sigma = torch.exp(self.logsigma)
         nill = torch.zeros_like(sigma)
@@ -158,14 +164,12 @@ class ConvDecoder(nn.Module):
         contents = torch.sigmoid(self.vn_cont.forward(x))
         self.contents = contents
 
-
-        #print(template.shape, contents.shape)
         joint = torch.cat([template, contents], axis=1)
         #print("join_shape", joint.shape)
-        
+ 
         out_temp_cont = []
         theta_lst = []
-        
+
         # for loc, join in zip(torch.split(x,self.n_objs, 1), torch.split(joint, self.n_objs, 0)):
         join = torch.split(joint, self.n_objs, 0)[0]
         U = torch.tile(join, [1, 1,1,1])
@@ -234,13 +238,13 @@ class VelEncoder(nn.Module):
         self.output = nn.Linear(100, self.coord_units//self.n_objs//2)
 
     def forward(self, x):
-        x = torch.split(x, self.n_objs, 2)
-        print("Shape after split: ", len(x))
-        x = torch.cat(x, dim=0)
-        x = torch.reshape(x, [x.shape[0], self.input_steps*self.coord_units//self.n_objs//2])
-        print("Shape of x in velencoder before going through layer 1, ", x.shape)
+        #x = torch.split(x, self.n_objs, 2)
+        #print("Shape after split: ", len(x))
+        #x = torch.cat(x, dim=0)
+        #x = torch.reshape(x, [x.shape[0], self.input_steps*self.coord_units//self.n_objs//2])
+        #print("Shape of x in velencoder before going through layer 1, ", x.shape)
         x = self.layer1(x)
-        x  = self.tanh(x)
+        x = self.tanh(x)
         x = self.layer2(x)
         x = self.tanh(x)
         output = self.output(x)
